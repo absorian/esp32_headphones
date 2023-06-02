@@ -15,11 +15,6 @@
 
 const char *TAG_GLOB = "Headphones";
 
-//#define CONFIG_EXAMPLE_WIFI_SSID "Wireless@Pepe"
-//#define CONFIG_EXAMPLE_WIFI_PASSWORD "01010100"
-//#define CONFIG_EXAMPLE_PORT 65001
-
-//#define FRAMES_PER_BUFFER 256
 #define NUM_CHANNELS 2
 #define BITS_PER_SAMPLE 16
 
@@ -39,14 +34,20 @@ const i2s_pin_config_t pin_config_mic = {
 
 #define NUM_CHANNELS 2
 #define SAMPLE_RATE 44100
-
 const ip_address_t HOST_ADDR = ip_addr_from_string("192.168.1.101");
+#define PORT 65001
 
 #include "controller.h"
 #include "sender.h"
 #include "receiver.h"
 
 #define PIPE_WIDTH 1024 - 4 + controller_t::md_size()
+
+#if NUM_CHANNELS == 1
+#define CHANNEL_FMT I2S_CHANNEL_FMT_ALL_RIGHT
+#else
+#define CHANNEL_FMT I2S_CHANNEL_FMT_RIGHT_LEFT
+#endif
 
 #define DMA_BUF_COUNT 6
 #define DMA_BUF_SIZE 1024
@@ -275,6 +276,8 @@ extern "C" void app_main(void) {
     i2s_stream_cfg_t i2s_cfg1 = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg1.type = AUDIO_STREAM_WRITER;
     i2s_cfg1.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX);
+    i2s_cfg1.i2s_config.sample_rate = SAMPLE_RATE;
+    i2s_cfg1.i2s_config.channel_format = CHANNEL_FMT;
     i2s_cfg1.i2s_config.dma_buf_count = DMA_BUF_COUNT;
     i2s_cfg1.i2s_config.dma_buf_len = DMA_BUF_SIZE;
     i2s_cfg1.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB;
@@ -304,7 +307,7 @@ extern "C" void app_main(void) {
     audio_pipeline_run(pipeline_d);
 
     headphones_t hf;
-    hf.start(HOST_ADDR, 65001);
+    hf.start(HOST_ADDR, PORT);
 
     while (1) {
         vTaskDelay(pdMS_TO_TICKS(500));

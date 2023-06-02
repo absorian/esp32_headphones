@@ -1,4 +1,3 @@
-
 #include "impl.h"
 #include "controller.h"
 #include "sender.h"
@@ -13,12 +12,11 @@
 
 #define NUM_CHANNELS 2
 #define SAMPLE_RATE 44100
-
+#define PORT 65001
 
 #define PIPE_WIDTH 1024 - 4 + controller_t::md_size()
 
 const char *TAG_GLOB = "Translator";
-
 
 class remote_speaker_t : public sf::SoundRecorder {
     const char *TAG = "Remote speaker";
@@ -212,7 +210,7 @@ private:
 
 int main() {
     headphones_t hf;
-    hf.start(65001);
+    hf.start(PORT);
     char in;
     while (1) {
         std::cin >> in;
