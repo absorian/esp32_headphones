@@ -142,7 +142,7 @@ public:
     headphones_t() : controller_t(),
                      snd(this, PIPE_WIDTH), recv(this, PIPE_WIDTH), mic(snd), spk(recv) {
         // useless for now
-        spk.set_channel_count(NUM_CHANNELS);
+        mic.set_channel_count(NUM_CHANNELS);
 
         ESP_LOGI(TAG, "headphones_t initialized");
     }
@@ -159,7 +159,7 @@ public:
         mic_enabled(false);
         spk_enabled(false);
         recv.stop();
-        spk.stop();
+        mic.stop();
     }
 
     void send_state(state_t state) {
@@ -183,9 +183,9 @@ public:
         if (en == cur) return;
 
         if ((cur = en)) {
-            spk.start(SAMPLE_RATE);
+            mic.start(SAMPLE_RATE);
         } else {
-            spk.stop();
+            mic.stop();
         }
     }
 
@@ -194,9 +194,9 @@ public:
         if (en == cur) return;
 
         if ((cur = en)) {
-            mic.start(SAMPLE_RATE);
+            spk.start(SAMPLE_RATE);
         } else {
-            mic.stop();
+            spk.stop();
         }
     }
 
@@ -247,8 +247,8 @@ private:
     uint16_t remote_port{};
     asio::ip::address_v4 remote_addr;
 
-    remote_speaker_t mic;
-    remote_mic_t spk;
+    remote_speaker_t spk;
+    remote_mic_t mic;
 };
 
 extern "C" void app_main(void) {
