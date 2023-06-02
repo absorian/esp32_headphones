@@ -6,8 +6,8 @@ from the specified server via **UDP** socket.
 The project uses ESP32 on the client along with an external DAC.
 
 ## Tech stack
-- Server: ESP-IDF, ESP-ADF, ASIO.
-- Client: SFML::Network, SFML::Audio(OpenAL).
+- Server: SFML::Network, SFML::Audio(OpenAL).
+- Client: ESP-IDF, ESP-ADF, ASIO.
 
 ## How to build
 ### Server
