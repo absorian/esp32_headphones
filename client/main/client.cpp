@@ -141,7 +141,7 @@ class headphones_t : public controller_t {
 
 public:
     headphones_t() : controller_t(),
-                     snd(this, PIPE_WIDTH), recv(this, PIPE_WIDTH), mic(snd), spk(recv) {
+                     snd(this, PIPE_WIDTH), recv(this, PIPE_WIDTH), mic(recv), spk(snd) {
         // useless for now
         mic.set_channel_count(NUM_CHANNELS);
 
@@ -248,8 +248,8 @@ private:
     uint16_t remote_port{};
     asio::ip::address_v4 remote_addr;
 
-    remote_speaker_t spk;
     remote_mic_t mic;
+    remote_speaker_t spk;
 };
 
 extern "C" void app_main(void) {
