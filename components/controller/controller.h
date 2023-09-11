@@ -17,7 +17,21 @@ public:
     };
     // up to 8 commands (can be expanded)
     enum cmd_t {
-        NO_CMD = 0, PLAY_PAUSE, NEXT, PREV
+        NO_CMD = 0, GET_PACKET, PLAY_PAUSE, NEXT, PREV
+    };
+
+    union data_block_t {
+        uint16_t data;
+        struct {
+            uint8_t b1;
+            uint8_t b2;
+        };
+        struct {
+            uint8_t stt : 2; // state
+            uint8_t cmd : 3; // command
+            uint8_t rsv : 3; // reserved
+            uint8_t num; // gp variable
+        };
     };
 
     controller_t() = default;
@@ -32,7 +46,7 @@ public:
     void remote_get_md(uint8_t *data);
 
     static size_t md_size() {
-        return 1;
+        return sizeof(data_block_t);
     }
 
 protected:
