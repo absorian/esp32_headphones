@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.17)
 
 set(COMPONENTS_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../components)
-set(SFML_SOURCE_DIR $ENV{SFML})
 
 MACRO(subdir_list result curdir)
     FILE(GLOB children RELATIVE ${curdir} ${curdir}/*)
@@ -18,7 +17,9 @@ project(server)
 
 set(CMAKE_CXX_STANDARD 14)
 
-add_subdirectory(${SFML_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/sfml)
+add_subdirectory($ENV{SFML} ${CMAKE_CURRENT_BINARY_DIR}/sfml)
+add_subdirectory($ENV{ASIO} ${CMAKE_CURRENT_BINARY_DIR}/asio)
+add_subdirectory($ENV{PORTAUDIO} ${CMAKE_CURRENT_BINARY_DIR}/portaudio)
 
 subdir_list(comps ${COMPONENTS_DIRECTORY})
 foreach (c ${comps})
@@ -26,6 +27,9 @@ foreach (c ${comps})
 endforeach ()
 
 add_executable(${CMAKE_PROJECT_NAME} main.cpp)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PortAudio)
+
 
 target_link_libraries(${CMAKE_PROJECT_NAME} sfml-audio #[[FLAC]])
 foreach (c ${comps})
