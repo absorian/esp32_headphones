@@ -45,7 +45,7 @@ public:
 
     void remote_get_md(uint8_t *data);
 
-    static size_t md_size() {
+    static constexpr size_t md_size() {
         return sizeof(data_block_t);
     }
 
