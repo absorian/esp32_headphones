@@ -4,7 +4,6 @@
 #include "receiver.h"
 
 #include <SFML/Audio.hpp>
-//#include <FLAC/stream_encoder.h>
 
 #include <iostream>
 #include <cstring>
@@ -16,7 +15,7 @@
 
 #define PIPE_WIDTH 1024 - 4 + controller_t::md_size()
 
-const char *TAG_GLOB = "Translator";
+const char *TAG_GLOB = "Server";
 
 class remote_speaker_t : public sf::SoundRecorder {
     const char *TAG = "Remote speaker";
@@ -85,7 +84,7 @@ private:
 };
 
 class headphones_t : public controller_t {
-    const char* TAG = "Headphones";
+    const char *TAG = "Headphones";
 public:
     std::string select_record_device() {
         int selected;
@@ -160,7 +159,7 @@ public:
 protected:
     void on_remote_state_change(state_t state) override {
         if (state >= STALL && !connected) {
-            logi(TAG, "Successfully connected to %s", ip_addr_to_string(recv.get_endpoint().address()).c_str());
+            logi(TAG, "Successfully connected to %s", recv.get_endpoint().address().to_string().c_str());
             connected = true;
             snd.set_endpoint(udp_endpoint_t(recv.get_endpoint().address(), remote_port));
         } else if (state == DISCONNECT && connected) {
