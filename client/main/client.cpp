@@ -35,7 +35,7 @@ const i2s_pin_config_t pin_config_mic = {
 #define NUM_CHANNELS 2
 #define SAMPLE_RATE 44100
 const ip_address_t HOST_ADDR = ip_address_t::from_string("10.242.1.61");
-#define PORT 65001
+#define PORT 533
 
 #include "controller.h"
 #include "sender.h"
