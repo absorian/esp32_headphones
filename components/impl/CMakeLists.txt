@@ -8,6 +8,6 @@ if (ESP_PLATFORM EQUAL 1)
 else()
     add_library(impl asio_io_context.cpp)
 
-    target_link_libraries(impl sfml-system asio)
+    target_link_libraries(impl asio)
     target_include_directories(impl PUBLIC .)
 endif ()
