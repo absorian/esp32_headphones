@@ -18,13 +18,13 @@
 
 #else
 
-#define logi(tag, fmt, ...) printf((std::string("%s: ") + fmt + std::string("\n")).c_str(), tag, ##__VA_ARGS__)
+#define logi(tag, fmt, ...) printf("I|%s: " fmt "\n", tag, ##__VA_ARGS__)
 #ifdef LOG_DEBUG
-#define logd(tag, fmt, ...) printf((std::string("%s: ") + fmt + std::string("\n")).c_str(), tag, ##__VA_ARGS__)
+#define logd(tag, fmt, ...) printf("D|%s: " fmt "\n", tag, ##__VA_ARGS__)
 #else
 #define logd(tag, fmt, ...)
 #endif
-#define loge(tag, fmt, ...) fprintf(stderr, (std::string("%s: ") + fmt + std::string("\n")).c_str(), tag, ##__VA_ARGS__)
+#define loge(tag, fmt, ...) fprintf(stderr, "E|%s: " fmt "\n", tag, ##__VA_ARGS__)
 #include "pthread_impl.h"
 
 #endif
