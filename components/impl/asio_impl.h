@@ -23,7 +23,7 @@ public:
         asio::error_code err;
         socket_impl.bind(udp_endpoint_t(asio::ip::udp::v4(), port), err);
         if (err) {
-            loge(TAG, "Binding error: %s", err.message().c_str());
+            loge(TAG, "Binding error %d: %s", err.value(), err.message().c_str());
         }
     }
 
