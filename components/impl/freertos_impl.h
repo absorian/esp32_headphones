@@ -72,6 +72,10 @@ public:
         vTaskDelete(handler);
     }
 
+    static void sleep(uint32_t ms) {
+        vTaskDelay(pdMS_TO_TICKS(ms));
+    }
+
 private:
     TaskHandle_t handler = nullptr;
 };

@@ -5,9 +5,9 @@
 #ifndef SFML_IMPL_H
 #define SFML_IMPL_H
 
-#include <SFML/System.hpp>
 #include <string>
 #include <pthread.h>
+#include <unistd.h>
 
 //
 class p_thread_mutex_t {
@@ -55,6 +55,11 @@ public:
 
     void terminate() {
         pthread_cancel(handler);
+    }
+
+    static void sleep(uint32_t ms) {
+        const timespec t = {static_cast<long>(ms / 1000), static_cast<long>((ms % 1000) * 1000)};
+        nanosleep(&t, nullptr);
     }
 
 private:
