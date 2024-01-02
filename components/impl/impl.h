@@ -9,7 +9,7 @@
 
 #define logi(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
 #ifdef LOG_DEBUG
-#define logd(tag, fmt, ...) ESP_LOGD(tag, fmt, ##__VA_ARGS__)
+#define logd(tag, fmt, ...) ESP_LOGI(tag, fmt, ##__VA_ARGS__)
 #else
 #define logd(tag, fmt, ...)
 #endif
