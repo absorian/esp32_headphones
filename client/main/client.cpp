@@ -280,6 +280,7 @@ protected:
             connected = false;
             spk_enabled(false);
             mic_enabled(false);
+            thread_t::sleep(500);
             return;
         }
 

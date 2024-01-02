@@ -265,6 +265,7 @@ protected:
             connected = false;
             mic_enabled(false);
             spk_enabled(false);
+            thread_t::sleep(500);
             return;
         }
 
@@ -313,7 +314,6 @@ int main() {
         std::cin >> in;
         if (in == 'q') {
             hf.send_state(controller_t::DISCONNECT);
-            thread_t::sleep(1000);
             break;
         }
     }
