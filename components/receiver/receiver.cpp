@@ -40,12 +40,12 @@ void receiver_t::task_receive(void *param) {
     auto body = (receiver_t *) param;
 
     logi(body->TAG, "task_receive is started");
-    uint8_t data[body->width];
+    uint8_t data[body->width + controller_t::md_size()];
 
     udp_endpoint_t sender_endpoint;
     size_t received;
     while (true) {
-        received = body->socket.receive(data, body->width, sender_endpoint);
+        received = body->socket.receive(data, body->width + controller_t::md_size(), sender_endpoint);
 
         body->mutex.lock();
 

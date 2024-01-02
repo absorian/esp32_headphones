@@ -1,6 +1,8 @@
 #include <cstdlib>
 #include <iostream>
 
+#define LOG_DEBUG
+
 #include "impl.h"
 
 #include "protocol_examples_common.h"
@@ -11,12 +13,8 @@
 #include "audio_pipeline.h"
 #include <raw_stream.h>
 #include <i2s_stream.h>
-#include <flac_decoder.h>
 
 const char *TAG_GLOB = "Headphones";
-
-#define NUM_CHANNELS 2
-#define BITS_PER_SAMPLE 16
 
 const i2s_pin_config_t pin_config_spk = {
         .bck_io_num = 14,
@@ -31,28 +29,40 @@ const i2s_pin_config_t pin_config_mic = {
         .data_in_num = 4
 };
 
+#define NUM_CHANNELS_SPK 2
+#define NUM_CHANNELS_MIC 1
 
-#define NUM_CHANNELS 2
+#define USE_FLAC_SPK 0
 #define SAMPLE_RATE 44100
-const ip_address_t HOST_ADDR = ip_addr_from_string("192.168.1.101");
-#define PORT 65001
+const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
+#define PORT 533
 
 #include "controller.h"
 #include "sender.h"
 #include "receiver.h"
 
-#define PIPE_WIDTH 1024 - 4 + controller_t::md_size()
+#define PIPE_WIDTH 1024 - (controller_t::md_size() / 4 + (controller_t::md_size() % 4 != 0)) * 4
 
-#if NUM_CHANNELS == 1
-#define CHANNEL_FMT I2S_CHANNEL_FMT_ALL_RIGHT
+#if NUM_CHANNELS_SPK == 1
+#define CHANNEL_FMT_SPK I2S_CHANNEL_FMT_ONLY_RIGHT
 #else
-#define CHANNEL_FMT I2S_CHANNEL_FMT_RIGHT_LEFT
+#define CHANNEL_FMT_SPK I2S_CHANNEL_FMT_RIGHT_LEFT
 #endif
 
-#define DMA_BUF_COUNT 6
+#if NUM_CHANNELS_MIC == 1
+#define CHANNEL_FMT_MIC I2S_CHANNEL_FMT_ONLY_LEFT
+#else
+#define CHANNEL_FMT_MIC I2S_CHANNEL_FMT_RIGHT_LEFT
+#endif
+
+#if USE_FLAC_SPK
+
+#include <flac_decoder.h>
+
+#endif
+
+#define DMA_BUF_COUNT 4
 #define DMA_BUF_SIZE 1024
-static audio_element_handle_t raw_write, flac_decoder, i2s_stream_writer;
-static audio_pipeline_handle_t pipeline_d, pipeline_e;
 
 int64_t get_time_ms() {
     timeval tv_now{};
@@ -60,78 +70,138 @@ int64_t get_time_ms() {
     return (int64_t) tv_now.tv_sec * 1000L + (int64_t) tv_now.tv_usec / 1000L;
 }
 
-class remote_speaker_t { // TODO: connect with the actual mic
-    const char *TAG = "Remote speaker";
+class remote_sink_t { // TODO: connect with the actual mic
+    const char *TAG = "Remote sink";
 public:
-    explicit remote_speaker_t(sender_t &sender)
+    explicit remote_sink_t(sender_t &sender)
             : sender(sender) {
-        ESP_LOGI(TAG, "mic_t initialized");
+        logi(TAG, "initializing...");
+
+        audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+        pipeline = audio_pipeline_init(&pipeline_cfg);
+        logi(TAG, "created pipeline");
+
+        i2s_stream_cfg_t i2s_mic_cfg = I2S_STREAM_CFG_DEFAULT();
+        i2s_mic_cfg.i2s_port = I2S_NUM_1;
+        i2s_mic_cfg.type = AUDIO_STREAM_READER;
+        i2s_mic_cfg.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_RX);
+        i2s_mic_cfg.i2s_config.sample_rate = SAMPLE_RATE;
+        i2s_mic_cfg.i2s_config.bits_per_sample = i2s_bits_per_sample_t(16);
+        i2s_mic_cfg.i2s_config.channel_format = CHANNEL_FMT_MIC;
+        i2s_mic_cfg.i2s_config.dma_buf_count = DMA_BUF_COUNT;
+        i2s_mic_cfg.i2s_config.dma_buf_len = DMA_BUF_SIZE;
+        i2s_mic_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+
+        i2s_stream_reader = i2s_stream_init(&i2s_mic_cfg);
+        i2s_set_pin(I2S_NUM_1, &pin_config_mic);
+        logi(TAG, "created i2s element");
+
+        audio_pipeline_register(pipeline, i2s_stream_reader, "i2s_mic");
+        logi(TAG, "registered elements");
+        audio_element_set_write_cb(i2s_stream_reader, on_raw_read, this);
+
+        const char *link[] = {"i2s_mic"};
+        audio_pipeline_link(pipeline, &link[0], 1);
+
+        logi(TAG, "initialized!");
     }
 
-    void start(uint32_t sample_rate) {
-
+    void start() {
+        logd(TAG, "starting");
+        audio_pipeline_run(pipeline);
+        audio_pipeline_resume(pipeline);
     }
 
     void stop() {
-
+        logd(TAG, "stopping");
+        audio_pipeline_pause(pipeline);
     }
 
 private:
+    static audio_element_err_t
+    on_raw_read(audio_element_handle_t self, char *buffer, int len, TickType_t ticks_to_wait, void *context) {
+        auto *body = (remote_sink_t *) context;
 
-    bool onProcessSamples(const int16_t *samples, size_t sampleCount) {
-        sender.send((uint8_t *) samples, sampleCount * 2);
-        return true;
+        body->sender.send((uint8_t *) buffer, len);
+        return static_cast<audio_element_err_t>(len); // esp-adf - stuff happens
     }
 
+
+    audio_element_handle_t i2s_stream_reader;
+    audio_pipeline_handle_t pipeline;
     sender_t &sender;
 };
 
-class remote_mic_t {
-    const char *TAG = "Remote microphone";
+class remote_source_t {
+    const char *TAG = "Remote source";
 public:
-    explicit remote_mic_t(receiver_t &receiver)
+    explicit remote_source_t(receiver_t &receiver)
             : recv(receiver) {
         recv.set_receive_callback(on_receive_data, this);
-        ESP_LOGI(TAG, "speaker_t initialized");
+
+        audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+        pipeline = audio_pipeline_init(&pipeline_cfg);
+
+        i2s_stream_cfg_t i2s_spk_cfg = I2S_STREAM_CFG_DEFAULT();
+        i2s_spk_cfg.i2s_port = I2S_NUM_0;
+        i2s_spk_cfg.type = AUDIO_STREAM_WRITER;
+        i2s_spk_cfg.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX);
+        i2s_spk_cfg.i2s_config.sample_rate = SAMPLE_RATE;
+        i2s_spk_cfg.i2s_config.channel_format = CHANNEL_FMT_SPK;
+        i2s_spk_cfg.i2s_config.dma_buf_count = DMA_BUF_COUNT;
+        i2s_spk_cfg.i2s_config.dma_buf_len = DMA_BUF_SIZE;
+        i2s_spk_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB;
+
+        i2s_stream_writer = i2s_stream_init(&i2s_spk_cfg);
+        i2s_set_pin(I2S_NUM_0, &pin_config_spk);
+
+#if USE_FLAC_SPK
+        flac_decoder_cfg_t decoder_cfg = DEFAULT_FLAC_DECODER_CONFIG();
+        flac_decoder = flac_decoder_init(&decoder_cfg);
+#endif
+
+        raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
+        raw_cfg.type = AUDIO_STREAM_WRITER;
+        raw_write = raw_stream_init(&raw_cfg);
+
+        audio_pipeline_register(pipeline, raw_write, "raw_spk");
+#if USE_FLAC_SPK
+        audio_pipeline_register(pipeline, flac_decoder, "flac_dec");
+#endif
+        audio_pipeline_register(pipeline, i2s_stream_writer, "i2s_spk");
+
+#if USE_FLAC_SPK
+        const char *link[] = {"raw_spk", "flac_dec", "i2s_spk"};
+        audio_pipeline_link(pipeline, &link[0], 3);
+#else
+        const char *link[] = {"raw_spk", "i2s_spk"};
+        audio_pipeline_link(pipeline, &link[0], 2);
+#endif
+
+        logi(TAG, "initialized");
     }
 
-    void set_channel_count(uint8_t count) {
-        num_channels = count;
-    }
-
-    void start(uint32_t sample_rate) { // TODO: initialize raw_stream here, actually in its own derived class
-        time_stamp = get_time_ms();
-
-//        initialize(num_channels, sample_rate);
-//        play();
+    void start() { // TODO: initialize raw_stream here, actually in its own derived class
+        logi(TAG, "starting");
+        audio_pipeline_run(pipeline);
+        audio_pipeline_resume(pipeline);
     }
 
     void stop() {
-
+        logi(TAG, "stopping");
+        audio_pipeline_pause(pipeline);
     }
 
 private:
     static void on_receive_data(const uint8_t *data, size_t bytes, void *client_data) {
-        auto body = (remote_mic_t *) client_data;
+        auto body = (remote_source_t *) client_data;
 
-        int16_t past = get_time_ms() - body->time_stamp;
-        if (past > 30) {
-            ESP_LOGI(body->TAG, "Huge delay: %d ms", past);
-        }
-//        float frames_must = past / 1000.0 * 44100; // body->sample_rate
-//        int32_t frames = bytes / body->num_channels;
-//        if (frames < frames_must) {
-//            ESP_LOGI(body->TAG, "Time: %d ms, came: %d, must: %f, debt is %f",
-//                     past, frames, frames_must, frames_must - frames);
-//        }
-        body->time_stamp = get_time_ms();
-
-        raw_stream_write(raw_write, (char *) data, bytes);
+        if (audio_element_get_state(body->raw_write) == AEL_STATE_RUNNING)
+            raw_stream_write(body->raw_write, (char *) data, bytes);
     }
 
-    uint8_t num_channels = 2;
-
-    int64_t time_stamp{};
+    audio_element_handle_t raw_write, __unused flac_decoder{}, i2s_stream_writer;
+    audio_pipeline_handle_t pipeline;
 
     receiver_t &recv;
 };
@@ -142,10 +212,8 @@ class headphones_t : public controller_t {
 public:
     headphones_t() : controller_t(),
                      snd(this, PIPE_WIDTH), recv(this, PIPE_WIDTH), mic(snd), spk(recv) {
-        // useless for now
-        mic.set_channel_count(NUM_CHANNELS);
 
-        ESP_LOGI(TAG, "headphones_t initialized");
+        logi(TAG, "headphones_t initialized");
     }
 
     void start(const asio::ip::address_v4 &remote_addr_, uint16_t remote_port_) {
@@ -156,23 +224,23 @@ public:
     }
 
     void stop() {
-        ESP_LOGI(TAG, "Stopping");
+        logi(TAG, "Stopping");
         mic_enabled(false);
         spk_enabled(false);
         recv.stop();
-        mic.stop();
+        spk.stop();
     }
 
     void send_state(state_t state) {
         set_state(state);
         // TODO: if spk enabled -> return;
         for (int i = 0; i < 3; ++i) {
-            snd.send(nullptr, 0);
+            snd.send_immediate(nullptr, 0);
         }
     }
 
     bool is_connected() {
-        bool c = false;
+        bool c;
         mutex.lock();
         c = connected;
         mutex.unlock();
@@ -184,9 +252,9 @@ public:
         if (en == cur) return;
 
         if ((cur = en)) {
-            mic.start(SAMPLE_RATE);
+            spk.start();
         } else {
-            mic.stop();
+            spk.stop();
         }
     }
 
@@ -195,39 +263,40 @@ public:
         if (en == cur) return;
 
         if ((cur = en)) {
-            spk.start(SAMPLE_RATE);
+            mic.start();
         } else {
-            spk.stop();
+            mic.stop();
         }
     }
 
 protected:
     void on_remote_state_change(state_t state) override {
         if (state >= STALL && !connected) {
-            ESP_LOGI(TAG, "Successfully connected from %s:%d", remote_addr.to_string().c_str(), remote_port);
+            logi(TAG, "Successfully connected from %s:%d", remote_addr.to_string().c_str(), remote_port);
             connected = true;
 
         } else if (state == DISCONNECT && connected) {
-            ESP_LOGI(TAG, "Got disconnected, stopping enabled devices");
+            logi(TAG, "Got disconnected, stopping enabled devices");
             connected = false;
             spk_enabled(false);
             mic_enabled(false);
+            thread_t::sleep(500);
             return;
         }
 
         switch (state) {
             case STALL:
-                ESP_LOGI(TAG, "The state is STALL");
+                logi(TAG, "The state is STALL");
                 spk_enabled(false);
                 mic_enabled(false);
                 break;
             case SPK_ONLY:
-                ESP_LOGI(TAG, "The state is SPK_ONLY");
+                logi(TAG, "The state is SPK_ONLY");
                 spk_enabled(true);
                 mic_enabled(false);
                 break;
             case FULL:
-                ESP_LOGI(TAG, "The state is FULL");
+                logi(TAG, "The state is FULL");
                 mic_enabled(true);
                 spk_enabled(true);
                 break;
@@ -237,7 +306,7 @@ protected:
     }
 
     void on_remote_cmd_receive(cmd_t cmd) override {
-        ESP_LOGI(TAG, "Received a command: %d", cmd);
+        logi(TAG, "Received a command: %d", cmd);
     }
 
 private:
@@ -246,10 +315,10 @@ private:
     sender_t snd;
     receiver_t recv;
     uint16_t remote_port{};
-    asio::ip::address_v4 remote_addr;
+    ip_address_t remote_addr;
 
-    remote_speaker_t spk;
-    remote_mic_t mic;
+    remote_sink_t mic;
+    remote_source_t spk;
 };
 
 extern "C" void app_main(void) {
@@ -263,6 +332,7 @@ extern "C" void app_main(void) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG_GLOB, ESP_LOG_DEBUG);
 
+    // TODO: code own connection func/class
     esp_netif_init();
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_connect());
@@ -270,49 +340,12 @@ extern "C" void app_main(void) {
     /* This helper function configures blocking UART I/O */
 //    ESP_ERROR_CHECK(example_configure_stdin_stdout());
 
-    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
-    pipeline_d = audio_pipeline_init(&pipeline_cfg);
-
-    i2s_stream_cfg_t i2s_cfg1 = I2S_STREAM_CFG_DEFAULT();
-    i2s_cfg1.type = AUDIO_STREAM_WRITER;
-    i2s_cfg1.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX);
-    i2s_cfg1.i2s_config.sample_rate = SAMPLE_RATE;
-    i2s_cfg1.i2s_config.channel_format = CHANNEL_FMT;
-    i2s_cfg1.i2s_config.dma_buf_count = DMA_BUF_COUNT;
-    i2s_cfg1.i2s_config.dma_buf_len = DMA_BUF_SIZE;
-    i2s_cfg1.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB;
-    i2s_stream_writer = i2s_stream_init(&i2s_cfg1);
-    i2s_set_pin(I2S_NUM_0, &pin_config_spk);
-
-    flac_decoder_cfg_t decoder_cfg = DEFAULT_FLAC_DECODER_CONFIG();
-    flac_decoder = flac_decoder_init(&decoder_cfg);
-
-    raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
-    raw_cfg.type = AUDIO_STREAM_WRITER;
-    raw_write = raw_stream_init(&raw_cfg);
-
-    audio_pipeline_register(pipeline_d, raw_write, "raw");
-//    audio_pipeline_register(pipeline_d, flac_decoder, "dec");
-    audio_pipeline_register(pipeline_d, i2s_stream_writer, "i2s_w");
-
-    const char *link_d[] = {"raw", "i2s_w"};
-    audio_pipeline_link(pipeline_d, &link_d[0], 2);
-//    const char *link_d[] = {"raw", "dec", "i2s_w"};
-//    audio_pipeline_link(pipeline_d, &link_d[0], 3);
-
-//    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-//    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
-//    audio_pipeline_set_listener(pipeline_d, evt);
-
-    audio_pipeline_run(pipeline_d);
-
     headphones_t hf;
     hf.start(HOST_ADDR, PORT);
 
     while (1) {
-        vTaskDelay(pdMS_TO_TICKS(500));
+        thread_t::sleep(500);
         if (!hf.is_connected())
-            hf.send_state(headphones_t::SPK_ONLY);
+            hf.send_state(headphones_t::FULL);
     }
-//    io_context.run();
 }
