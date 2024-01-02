@@ -3,7 +3,6 @@
 #include "sender.h"
 #include "receiver.h"
 
-//#include <SFML/Audio.hpp>
 #include <portaudio.h>
 
 #include <iostream>
@@ -191,12 +190,7 @@ public:
 private:
     static void on_receive_data(const uint8_t *data, size_t bytes, void *client_data) {
         auto body = (remote_source_t *) client_data;
-//        body->mutex.lock();
         Pa_WriteStream(body->stream, data, bytes / (NUM_CHANNELS_MIC * sizeof(sample_t)));
-//        logi(body->TAG, "%d", bytes);
-//        std::copy(data, data + bytes, body->storage);
-//        body->storage_size = bytes;
-//        body->mutex.unlock();
     }
 
     PaStreamParameters pa_params{};

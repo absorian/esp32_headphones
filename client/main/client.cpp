@@ -13,7 +13,6 @@
 #include "audio_pipeline.h"
 #include <raw_stream.h>
 #include <i2s_stream.h>
-#include <array>
 
 const char *TAG_GLOB = "Headphones";
 
@@ -35,7 +34,6 @@ const i2s_pin_config_t pin_config_mic = {
 
 #define USE_FLAC_SPK 0
 #define SAMPLE_RATE 44100
-//const ip_address_t HOST_ADDR = ip_address_t::from_string("10.242.1.61");
 const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
 #define PORT 533
 
@@ -125,7 +123,7 @@ private:
         auto *body = (remote_sink_t *) context;
 
         body->sender.send((uint8_t *) buffer, len);
-        return static_cast<audio_element_err_t>(len); // esp-adf 2.4 - stuff happens
+        return static_cast<audio_element_err_t>(len); // esp-adf - stuff happens
     }
 
 
@@ -199,17 +197,10 @@ private:
     static void on_receive_data(const uint8_t *data, size_t bytes, void *client_data) {
         auto body = (remote_source_t *) client_data;
 
-//        int16_t past = get_time_ms() - body->time_stamp;
-//        if (past > 30) {
-//            logi(body->TAG, "Huge delay: %d ms", past);
-//        }
-//        body->time_stamp = get_time_ms();
-
         if (audio_element_get_state(body->raw_write) == AEL_STATE_RUNNING)
             raw_stream_write(body->raw_write, (char *) data, bytes);
     }
 
-    int64_t time_stamp{};
     audio_element_handle_t raw_write, __unused flac_decoder{}, i2s_stream_writer;
     audio_pipeline_handle_t pipeline;
 
@@ -250,7 +241,7 @@ public:
     }
 
     bool is_connected() {
-        bool c = false;
+        bool c;
         mutex.lock();
         c = connected;
         mutex.unlock();
@@ -330,18 +321,6 @@ private:
     remote_source_t spk;
 };
 
-audio_element_err_t
-mic_cb(audio_element_handle_t self, char *buffer, int len, TickType_t ticks_to_wait, void *context) {
-    if (!len) return static_cast<audio_element_err_t>(len);
-    int avg = 0;
-    for (int i = 0; i < len; ++i) {
-        avg += buffer[i];
-    }
-    avg /= len;
-    logi("MIC_CB", "ttw=%u, len=%d, avg=%d", ticks_to_wait, len, avg);
-    return static_cast<audio_element_err_t>(len);
-}
-
 extern "C" void app_main(void) {
     esp_err_t err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
@@ -369,5 +348,4 @@ extern "C" void app_main(void) {
         if (!hf.is_connected())
             hf.send_state(headphones_t::FULL);
     }
-//    io_context.run();
 }
