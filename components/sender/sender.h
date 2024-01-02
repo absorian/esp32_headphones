@@ -13,16 +13,21 @@ class sender_t {
 public:
     sender_t(controller_t *controller, size_t pipe_width);
 
-    explicit sender_t(size_t pipe_width);
-
     void set_endpoint(const udp_endpoint_t &enp);
 
     void send(uint8_t *data, size_t bytes);
 
+    void send_immediate(uint8_t *data, size_t bytes);
+
 private:
     void send_raw(uint8_t *data, size_t bytes);
 
+    void append_leftover(uint8_t *data, size_t bytes);
+
     controller_t *control;
+
+    std::vector<uint8_t> buf;
+    int buf_ptr = 0;
 
     udp_socket_t socket;
     udp_endpoint_t endpoint;
