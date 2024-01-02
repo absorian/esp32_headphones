@@ -183,7 +183,6 @@ public:
 
     void start() { // TODO: initialize raw_stream here, actually in its own derived class
         logi(TAG, "starting");
-        time_stamp = get_time_ms();
         audio_pipeline_run(pipeline);
         audio_pipeline_resume(pipeline);
     }
