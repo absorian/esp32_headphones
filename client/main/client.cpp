@@ -117,7 +117,6 @@ public:
     void stop() {
         logd(TAG, "stopping");
         audio_pipeline_pause(pipeline);
-        // TODO: Make the working pause/stop
     }
 
 private:
@@ -193,7 +192,7 @@ public:
 
     void stop() {
         logi(TAG, "stopping");
-        // TODO: Make the working pause/stop
+        audio_pipeline_pause(pipeline);
     }
 
 private:
@@ -206,7 +205,8 @@ private:
 //        }
 //        body->time_stamp = get_time_ms();
 
-        raw_stream_write(body->raw_write, (char *) data, bytes);
+        if (audio_element_get_state(body->raw_write) == AEL_STATE_RUNNING)
+            raw_stream_write(body->raw_write, (char *) data, bytes);
     }
 
     int64_t time_stamp{};
