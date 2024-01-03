@@ -1,7 +1,9 @@
-set /p adf=< ./ESP_ADF_PATH.txt
+@echo off
+< ADF_IDF_PATHS.txt (
+set /p ADF_PATH=
+set /p IDF_PATH=
+)
 
-%adf%/export.bat
+%IDF_PATH%\export.bat
 
-cd esp32_headphones\client
-
-
+cd ..
