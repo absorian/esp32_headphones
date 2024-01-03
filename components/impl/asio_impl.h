@@ -33,7 +33,9 @@ public:
     }
 
     void send(const uint8_t *data, size_t bytes, const udp_endpoint_t &endpoint) {
-        socket_impl.send_to(asio::buffer(data, bytes), endpoint);
+        asio::error_code ec;
+        socket_impl.send_to(asio::buffer(data, bytes), endpoint, 0, ec);
+        if (ec) logi(TAG, "error while sending: %s (%d)", ec.message().c_str(), ec.value());
     }
 
     size_t receive(uint8_t *data, size_t max_bytes, udp_endpoint_t &endpoint) {
