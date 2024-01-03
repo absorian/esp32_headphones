@@ -78,6 +78,7 @@ public:
         logi(TAG, "initializing...");
 
         audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+        pipeline_cfg.rb_size = 4 * 1024;
         pipeline = audio_pipeline_init(&pipeline_cfg);
         logi(TAG, "created pipeline");
 
@@ -140,6 +141,7 @@ public:
         recv.set_receive_callback(on_receive_data, this);
 
         audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+        pipeline_cfg.rb_size = 4 * 1024;
         pipeline = audio_pipeline_init(&pipeline_cfg);
 
         i2s_stream_cfg_t i2s_spk_cfg = I2S_STREAM_CFG_DEFAULT();
@@ -343,9 +345,19 @@ extern "C" void app_main(void) {
     headphones_t hf;
     hf.start(HOST_ADDR, PORT);
 
+    uint32_t avg = 0, minn = UINT32_MAX;
+
     while (1) {
         thread_t::sleep(500);
         if (!hf.is_connected())
             hf.send_state(headphones_t::FULL);
+
+        auto cur = esp_get_free_heap_size();
+        avg += cur;
+        avg /= 2;
+        if (cur < minn) {
+            minn = cur;
+            logi(TAG_GLOB, "Free heap size: new min %d, avg %d", minn, avg);
+        }
     }
 }
