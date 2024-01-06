@@ -1,2 +1,2 @@
 C:\Dev\esp\esp-adf
-C:\Dev\esp\esp-idf-v4.4.3
+C:\Dev\esp\esp-idf

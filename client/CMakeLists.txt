@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.16)
 
 set(COMPONENTS_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../components)
 
