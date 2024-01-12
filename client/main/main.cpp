@@ -135,6 +135,36 @@ static void avrc_tg_callback(esp_avrc_tg_cb_event_t event, esp_avrc_tg_cb_param_
     }
 }
 
+static void bt_app_avrc_ct_cb(esp_avrc_ct_cb_event_t event, esp_avrc_ct_cb_param_t *p_param)
+{
+    esp_avrc_ct_cb_param_t *rc = p_param;
+
+    switch (event) {
+        case ESP_AVRC_CT_METADATA_RSP_EVT: {
+            // esp_avrc_md_attr_mask_t will be helpful
+            auto *tmp = static_cast<uint8_t *>(audio_calloc(1, rc->meta_rsp.attr_length + 1));
+            memcpy(tmp, rc->meta_rsp.attr_text, rc->meta_rsp.attr_length);
+            ESP_LOGI(TAG, "AVRC ct metadata evt: attribute id 0x%x, %s", rc->meta_rsp.attr_id, tmp);
+            audio_free(tmp);
+            break;
+        }
+        case ESP_AVRC_CT_CONNECTION_STATE_EVT: {
+            ESP_LOGI(TAG, "AVRC ct connection evt: %sconnected", rc->conn_stat.connected ? "" : "dis");
+            break;
+        }
+        case ESP_AVRC_CT_SET_ABSOLUTE_VOLUME_RSP_EVT: {
+            ESP_LOGI(TAG, "AVRC ct set absolute vol evt: volume is %d", rc->set_volume_rsp.volume);
+            break;
+        }
+        case ESP_AVRC_CT_REMOTE_FEATURES_EVT: {
+            ESP_LOGI(TAG, "AVRC ct remote features %lx, TG features %x", rc->rmt_feats.feat_mask, rc->rmt_feats.tg_feat_flag);
+            break;
+        }
+        default:
+            break;
+    }
+}
+
 extern "C" void app_main(void)
 {
     esp_err_t err = nvs_flash_init();
@@ -152,6 +182,7 @@ extern "C" void app_main(void)
     bluetooth_service_cfg_t bt_cfg = {
             .device_name = "ESP-ADF-AUDIO",
             .mode = BLUETOOTH_A2DP_SINK,
+            .user_callback = { .user_avrc_ct_cb = bt_app_avrc_ct_cb },
     };
     bluetooth_service_start(&bt_cfg);
 
