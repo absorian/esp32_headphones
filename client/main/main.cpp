@@ -13,11 +13,10 @@
 
 #include "hf_handle.h"
 
-#include "impl.h"
+//#include "impl.h"
 
 #include "esp_log.h"
 #include "esp_peripherals.h"
-#include "periph_adc_button.h"
 #include "esp_bt_defs.h"
 #include "esp_gap_bt_api.h"
 
@@ -37,7 +36,6 @@ static esp_periph_handle_t bt_periph = NULL;
 audio_element_handle_t bt_stream_reader, raw_read;
 static audio_element_handle_t i2s_stream_writer, i2s_stream_reader;
 static audio_pipeline_handle_t pipeline_d, pipeline_e;
-
 
 const i2s_pin_config_t pin_config_spk = {
         .bck_io_num = 14,
@@ -87,9 +85,15 @@ const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
 #define DMA_BUF_COUNT 4
 #define DMA_BUF_SIZE 1024
 
+long map(long x, long in_min, long in_max, long out_min, long out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+}
 
-#define VOLUME_OFFSET 127
-static int default_volume = 0;
+static int volume_convert_alc(int vol) {
+    return vol ? map(vol, 0, 127, -40, 0) : -64;
+}
+
+static int default_volume = 64; // 0..127
 static void avrc_tg_callback(esp_avrc_tg_cb_event_t event, esp_avrc_tg_cb_param_t *param) {
     ESP_LOGD(TAG, "%s evt %d", __func__, event);
     esp_avrc_tg_cb_param_t *rc = (esp_avrc_tg_cb_param_t *)(param);
@@ -105,10 +109,9 @@ static void avrc_tg_callback(esp_avrc_tg_cb_event_t event, esp_avrc_tg_cb_param_
             break;
         }
         case ESP_AVRC_TG_SET_ABSOLUTE_VOLUME_CMD_EVT: {
-            ESP_LOGI(TAG, "AVRC set absolute volume: %d%%", (int)rc->set_abs_vol.volume * 100/ 0x7f);
-            int vol = rc->set_abs_vol.volume - VOLUME_OFFSET;
-            i2s_alc_volume_set(i2s_stream_writer, vol);
-            default_volume = vol;
+            ESP_LOGI(TAG, "AVRC set absolute volume: %d%%", (int)rc->set_abs_vol.volume * 100 / 0x7f);
+            i2s_alc_volume_set(i2s_stream_writer, volume_convert_alc(rc->set_abs_vol.volume));
+            default_volume = rc->set_abs_vol.volume;
             break;
         }
         case ESP_AVRC_TG_REGISTER_NOTIFICATION_EVT: {
@@ -151,11 +154,11 @@ extern "C" void app_main(void)
     };
     bluetooth_service_start(&bt_cfg);
 
-//    esp_avrc_tg_init();
-//    esp_avrc_tg_register_callback(avrc_tg_callback);
-//    esp_avrc_rn_evt_cap_mask_t evt_set = {0};
-//    esp_avrc_rn_evt_bit_mask_operation(ESP_AVRC_BIT_MASK_OP_SET, &evt_set, ESP_AVRC_RN_VOLUME_CHANGE);
-//    esp_avrc_tg_set_rn_evt_cap(&evt_set);
+    esp_avrc_tg_init();
+    esp_avrc_tg_register_callback(avrc_tg_callback);
+    esp_avrc_rn_evt_cap_mask_t evt_set = {0};
+    esp_avrc_rn_evt_bit_mask_operation(ESP_AVRC_BIT_MASK_OP_SET, &evt_set, ESP_AVRC_RN_VOLUME_CHANGE);
+    esp_avrc_tg_set_rn_evt_cap(&evt_set);
 
     esp_hf_client_register_callback(bt_hf_client_cb);
     esp_hf_client_init();
@@ -176,7 +179,7 @@ extern "C" void app_main(void)
 //    i2s_spk_cfg.i2s_config.dma_buf_len = DMA_BUF_SIZE;
     i2s_spk_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     i2s_spk_cfg.use_alc = true;
-    i2s_spk_cfg.volume = 0;
+    i2s_spk_cfg.volume = volume_convert_alc(default_volume);
 
     i2s_stream_writer = i2s_stream_init(&i2s_spk_cfg);
     i2s_set_pin(i2s_spk_cfg.i2s_port, &pin_config_spk);
@@ -185,60 +188,25 @@ extern "C" void app_main(void)
     i2s_mic_cfg.i2s_port = I2S_NUM_1;
     i2s_mic_cfg.type = AUDIO_STREAM_READER;
     i2s_mic_cfg.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_RX);
-    i2s_mic_cfg.i2s_config.sample_rate = SAMPLE_RATE;
+    i2s_mic_cfg.i2s_config.sample_rate = HFP_RESAMPLE_RATE;
     i2s_mic_cfg.i2s_config.bits_per_sample = i2s_bits_per_sample_t(16);
     i2s_mic_cfg.i2s_config.channel_format = CHANNEL_FMT_MIC;
-//    i2s_mic_cfg.i2s_config.dma_buf_count = DMA_BUF_COUNT;
-//    i2s_mic_cfg.i2s_config.dma_buf_len = DMA_BUF_SIZE;
+    i2s_mic_cfg.i2s_config.use_apll = false;
+    i2s_mic_cfg.i2s_config.dma_desc_num = DMA_BUF_COUNT;
+    i2s_mic_cfg.i2s_config.dma_frame_num = DMA_BUF_SIZE;
     i2s_mic_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
     i2s_mic_cfg.use_alc = true;
-    i2s_mic_cfg.volume = 50;
+    i2s_mic_cfg.volume = 64;
 
     i2s_stream_reader = i2s_stream_init(&i2s_mic_cfg);
     i2s_set_pin(i2s_mic_cfg.i2s_port, &pin_config_mic);
-
-//    i2s_stream_cfg_t i2s_cfg1 = I2S_STREAM_CFG_DEFAULT();
-//    i2s_cfg1.type = AUDIO_STREAM_WRITER;
-//    i2s_cfg1.i2s_config.mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX);
-//    i2s_cfg1.use_alc = true;
-//    i2s_cfg1.volume = 0;
-//
-//    i2s_stream_writer = i2s_stream_init(&i2s_cfg1);
-//    i2s_set_pin(I2S_NUM_0, &pin_config_spk);
-
-//    i2s_stream_cfg_t i2s_cfg2 = I2S_STREAM_CFG_DEFAULT();
-//    i2s_cfg2.type = AUDIO_STREAM_READER;
-//    i2s_cfg2.i2s_port = I2S_NUM_1;
-//    i2s_cfg2.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_RX);
-//    i2s_cfg2.i2s_config.channel_format = I2S_CHANNEL_FMT_ONLY_LEFT;
-//    i2s_cfg2.i2s_config.dma_buf_count = 6;
-//    i2s_cfg2.i2s_config.dma_buf_len = 1024;
-//    i2s_cfg2.use_alc = true;
-//    i2s_cfg2.volume = 50;
-//
-//    i2s_stream_reader = i2s_stream_init(&i2s_cfg2);
-//    i2s_set_pin(I2S_NUM_1, &pin_config_mic);
 
     raw_stream_cfg_t raw_cfg = RAW_STREAM_CFG_DEFAULT();
     raw_cfg.type = AUDIO_STREAM_READER;
     raw_read = raw_stream_init(&raw_cfg);
 
-//    audio_hal_func_t hal_func;
-//    hal_func.audio_codec_initialize = hal_initialise;
-//    hal_func.audio_codec_config_iface = hal_configure;
-//    hal_func.audio_codec_get_volume = hal_volume_get;
-//    hal_func.audio_codec_set_volume = hal_volume_set;
-//    audio_hal_codec_config_t hal_cfg = AUDIO_CODEC_DEFAULT_CONFIG();
-//    audio_hal_handle_t audio_hal = audio_hal_init(&hal_cfg, &hal_func);
-
     ESP_LOGI(TAG, "[3.2] Create Bluetooth stream");
     bt_stream_reader = bluetooth_service_create_stream();
-//    a2dp_stream_config_t a2dp_config = {
-//            .type = AUDIO_STREAM_READER,
-//            .user_callback = {0},
-//            .audio_hal = audio_hal,
-//    };
-//    bt_stream_reader = a2dp_stream_init(&a2dp_config);
 
     ESP_LOGI(TAG, "[3.3] Register all elements to audio pipeline");
     audio_pipeline_register(pipeline_d, bt_stream_reader, "bt");
@@ -258,12 +226,9 @@ extern "C" void app_main(void)
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
-//    ESP_LOGI(TAG, "[4.1] Initialize Touch peripheral");
-//    audio_board_key_init(set);
 
     ESP_LOGI(TAG, "[4.2] Create Bluetooth peripheral");
     bt_periph = bluetooth_service_create_periph();
-//    bt_periph = bt_create_periph();
 
     ESP_LOGI(TAG, "[4.2] Start all peripherals");
     esp_periph_start(set, bt_periph);
