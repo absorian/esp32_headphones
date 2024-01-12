@@ -39,16 +39,16 @@ static audio_element_handle_t i2s_stream_writer, i2s_stream_reader;
 static audio_pipeline_handle_t pipeline_d, pipeline_e;
 
 const i2s_pin_config_t pin_config_spk = {
-        .bck_io_num = 14,
-        .ws_io_num = 27,
-        .data_out_num = 22,
+        .bck_io_num = 13,
+        .ws_io_num = 14,
+        .data_out_num = 12,
         .data_in_num = I2S_PIN_NO_CHANGE
 };
 const i2s_pin_config_t pin_config_mic = {
-        .bck_io_num = 16, // 4
+        .bck_io_num = 16,
         .ws_io_num = 15,
         .data_out_num = I2S_PIN_NO_CHANGE,
-        .data_in_num = 4 // 2
+        .data_in_num = 4
 };
 
 #define NUM_CHANNELS_SPK 2
@@ -56,7 +56,7 @@ const i2s_pin_config_t pin_config_mic = {
 
 #define USE_FLAC_SPK 0
 #define SAMPLE_RATE 44100
-const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
+//const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
 #define PORT 533
 
 #include "controller.h"
