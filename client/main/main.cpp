@@ -6,6 +6,7 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+#define BTM_SCO_DATA_SIZE_MAX 240
 
 #include <cinttypes>
 #include "nvs_flash.h"
@@ -82,7 +83,7 @@ const ip_address_t HOST_ADDR = ip_address_t::from_string("192.168.1.4");
 
 #endif
 
-#define DMA_BUF_COUNT 4
+#define DMA_BUF_COUNT 3
 #define DMA_BUF_SIZE 1024
 
 long map(long x, long in_min, long in_max, long out_min, long out_max) {
@@ -175,9 +176,10 @@ extern "C" void app_main(void)
     i2s_spk_cfg.i2s_config.mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX);
     i2s_spk_cfg.i2s_config.sample_rate = SAMPLE_RATE;
     i2s_spk_cfg.i2s_config.channel_format = CHANNEL_FMT_SPK;
-//    i2s_spk_cfg.i2s_config.dma_buf_count = DMA_BUF_COUNT;
-//    i2s_spk_cfg.i2s_config.dma_buf_len = DMA_BUF_SIZE;
-    i2s_spk_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_I2S;
+    i2s_spk_cfg.i2s_config.use_apll = true;
+//    i2s_spk_cfg.i2s_config.dma_desc_num = DMA_BUF_COUNT;
+//    i2s_spk_cfg.i2s_config.dma_frame_num = DMA_BUF_SIZE;
+    i2s_spk_cfg.i2s_config.communication_format = I2S_COMM_FORMAT_STAND_MSB;
     i2s_spk_cfg.use_alc = true;
     i2s_spk_cfg.volume = volume_convert_alc(default_volume);
 
@@ -263,8 +265,9 @@ extern "C" void app_main(void)
 
             ESP_LOGI(TAG, "[ * ] Receive music info from Bluetooth, sample_rates=%d, bits=%d, ch=%d",
                      music_info.sample_rates, music_info.bits, music_info.channels);
-            audio_element_setinfo(i2s_stream_writer, &music_info);
+//            audio_element_setinfo(i2s_stream_writer, &music_info);
             i2s_stream_set_clk(i2s_stream_writer, music_info.sample_rates, music_info.bits, music_info.channels);
+            audio_pipeline_reset_ringbuffer(pipeline_d);
             continue;
         }
 //        if ((msg.source_type == PERIPH_ID_TOUCH || msg.source_type == PERIPH_ID_BUTTON || msg.source_type == PERIPH_ID_ADC_BTN)

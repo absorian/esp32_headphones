@@ -2,6 +2,8 @@
 // Created by ism on 05.01.2023.
 //
 #include <cstring>
+#include <algorithm>
+#include <cmath>
 #include "esp_log.h"
 
 #include "hf_handle.h"
@@ -11,26 +13,26 @@
 #include "raw_stream.h"
 
 static const char *TAG = "BT_HF";
-static bool is_get_hfp = true;
 
 extern audio_element_handle_t bt_stream_reader;
 extern audio_element_handle_t raw_read;
 
 static void bt_app_hf_client_audio_open(void) {
     ESP_LOGE(TAG, "bt_app_hf_client_audio_open");
-    audio_element_info_t bt_info = {0};
+    audio_element_info_t bt_info;
     audio_element_getinfo(bt_stream_reader, &bt_info);
     bt_info.sample_rates = HFP_RESAMPLE_RATE;
-    bt_info.channels = 1;
+    bt_info.channels = 2;
     bt_info.bits = 16;
     audio_element_setinfo(bt_stream_reader, &bt_info);
     audio_element_report_info(bt_stream_reader);
+    esp_hf_client_send_nrec();
 }
 
 static void bt_app_hf_client_audio_close(void) {
     ESP_LOGE(TAG, "bt_app_hf_client_audio_close");
     int sample_rate = periph_bluetooth_get_a2dp_sample_rate();
-    audio_element_info_t bt_info = {0};
+    audio_element_info_t bt_info;
     audio_element_getinfo(bt_stream_reader, &bt_info);
 //    bt_info.sample_rates = a2dp_sample_rate;
     bt_info.sample_rates = sample_rate;
@@ -40,32 +42,28 @@ static void bt_app_hf_client_audio_close(void) {
     audio_element_report_info(bt_stream_reader);
 }
 
-static uint32_t bt_app_hf_client_outgoing_cb(uint8_t *p_buf, uint32_t sz) {
-    int out_len_bytes = 0;
-    char *enc_buffer = (char *) audio_malloc(sz);
-    AUDIO_MEM_CHECK(TAG, enc_buffer, return 0)
-    if (is_get_hfp) {
-        out_len_bytes = raw_stream_read(raw_read, enc_buffer, sz);
-    }
+static int control_num = 0;
 
-    if (out_len_bytes == sz) {
-        is_get_hfp = false;
-        memcpy(p_buf, enc_buffer, out_len_bytes);
-        free(enc_buffer);
-        return sz;
-    } else {
-        is_get_hfp = true;
-        free(enc_buffer);
-        return 0;
+static uint32_t bt_app_hf_client_outgoing_cb(uint8_t *p_buf, uint32_t sz) {
+    if (++control_num > 1) {
+        control_num = 0;
+        return raw_stream_read(raw_read, (char *)(p_buf), sz);
     }
+    return 0;
 }
 
 static void bt_app_hf_client_incoming_cb(const uint8_t *buf, uint32_t sz) {
-    if (bt_stream_reader) {
-        if (audio_element_get_state(bt_stream_reader) == AEL_STATE_RUNNING) {
-            audio_element_output(bt_stream_reader, (char *) buf, sz);
-            esp_hf_client_outgoing_data_ready();
+    if (audio_element_get_state(bt_stream_reader) == AEL_STATE_RUNNING) {
+//            auto new_buf = buf;
+        auto buf1 = (uint16_t *)buf;
+        auto new_buf = (uint16_t*)audio_malloc(sz * 2);
+        for (int i = 0; i < sz / 2; i ++) {
+            new_buf[i * 2] = new_buf[i * 2 + 1] = buf1[i];
         }
+        audio_element_output(bt_stream_reader, (char *) new_buf, sz * 2);
+        esp_hf_client_outgoing_data_ready();
+
+        free(new_buf);
     }
 }
 
