@@ -75,22 +75,20 @@
 #include <cstring>
 
 #include "btstack.h"
+#include "btstack_config.h"
+#include "audio_element.h"
+#include "raw_stream.h"
 
-#include "btstack_resample.h"
-
-//#define AVRCP_BROWSING_ENABLED
 
 #ifdef HAVE_BTSTACK_STDIN
 #undef HAVE_BTSTACK_STDIN // no need for uart comm
 //#include "btstack_stdin.h"
 #endif
 
-#include "btstack_ring_buffer.h"
+#include "sco_demo_util.h"
 
 
 #define NUM_CHANNELS 2
-#define BYTES_PER_FRAME     (2*NUM_CHANNELS)
-#define MAX_SBC_FRAME_SIZE 120
 
 #ifdef HAVE_BTSTACK_STDIN
 static const char * device_addr_string = "00:1B:DC:08:E2:72"; // pts v5.0
@@ -99,15 +97,38 @@ static bd_addr_t device_addr;
 
 static btstack_packet_callback_registration_t hci_event_callback_registration;
 
-static uint8_t sdp_avdtp_sink_service_buffer[150];
+uint8_t sdp_avdtp_sink_service_buffer[150];
 static uint8_t sdp_avrcp_target_service_buffer[150];
 static uint8_t sdp_avrcp_controller_service_buffer[200];
 static uint8_t device_id_sdp_service_buffer[100];
+static uint8_t hfp_service_buffer[150];
+
+
+static hci_con_handle_t acl_handle = HCI_CON_HANDLE_INVALID;
+static hci_con_handle_t sco_handle = HCI_CON_HANDLE_INVALID;
+
+
+const uint8_t rfcomm_channel_nr = 1;
+const char hfp_hf_service_name[] = "HFP HF Demo";
+
+static uint8_t codecs[] = {
+        HFP_CODEC_CVSD,
+#ifdef ENABLE_HFP_WIDE_BAND_SPEECH
+        HFP_CODEC_MSBC,
+#endif
+#ifdef ENABLE_HFP_SUPER_WIDE_BAND_SPEECH
+        HFP_CODEC_LC3_SWB,
+#endif
+};
+
+static uint16_t indicators[1] = {0x01};
+static uint8_t negotiated_codec = HFP_CODEC_CVSD;
+//static char cmd;
 
 // we support all configurations with bitpool 2-53
 static uint8_t media_sbc_codec_capabilities[] = {
-        0xFF,//(AVDTP_SBC_44100 << 4) | AVDTP_SBC_STEREO,
-        0xFF,//(AVDTP_SBC_BLOCK_LENGTH_16 << 4) | (AVDTP_SBC_SUBBANDS_8 << 2) | AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
+        0xFF, // (AVDTP_SBC_16000 << 4) | AVDTP_SBC_STEREO,
+        0xFF, // (AVDTP_SBC_BLOCK_LENGTH_16 << 4) | (AVDTP_SBC_SUBBANDS_8 << 2) | AVDTP_SBC_ALLOCATION_METHOD_LOUDNESS,
         2, 53
 };
 
@@ -200,126 +221,42 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
 static void stdin_process(char cmd);
 #endif
 
-static int setup_demo(void) {
 
-    // init protocols
-    l2cap_init();
-    sdp_init();
-#ifdef ENABLE_BLE
-    // Initialize LE Security Manager. Needed for cross-transport key derivation
-    sm_init();
-#endif
-
-    // Init profiles
-    a2dp_sink_init();
-    avrcp_init();
-    avrcp_controller_init();
-    avrcp_target_init();
-
-
-    // Configure A2DP Sink
-    a2dp_sink_register_packet_handler(&a2dp_sink_packet_handler);
-    a2dp_sink_register_media_handler(&handle_l2cap_media_data_packet);
-    a2dp_sink_demo_stream_endpoint_t *stream_endpoint = &a2dp_sink_demo_stream_endpoint;
-    avdtp_stream_endpoint_t *local_stream_endpoint = a2dp_sink_create_stream_endpoint(AVDTP_AUDIO,
-                                                                                      AVDTP_CODEC_SBC,
-                                                                                      media_sbc_codec_capabilities,
-                                                                                      sizeof(media_sbc_codec_capabilities),
-                                                                                      stream_endpoint->media_sbc_codec_configuration,
-                                                                                      sizeof(stream_endpoint->media_sbc_codec_configuration));
-    btstack_assert(local_stream_endpoint != NULL);
-    // - Store stream enpoint's SEP ID, as it is used by A2DP API to identify the stream endpoint
-    stream_endpoint->a2dp_local_seid = avdtp_local_seid(local_stream_endpoint);
-
-
-    // Configure AVRCP Controller + Target
-    avrcp_register_packet_handler(&avrcp_packet_handler);
-    avrcp_controller_register_packet_handler(&avrcp_controller_packet_handler);
-    avrcp_target_register_packet_handler(&avrcp_target_packet_handler);
-
-
-    // Configure SDP
-
-    // - Create and register A2DP Sink service record
-    memset(sdp_avdtp_sink_service_buffer, 0, sizeof(sdp_avdtp_sink_service_buffer));
-    a2dp_sink_create_sdp_record(sdp_avdtp_sink_service_buffer, sdp_create_service_record_handle(),
-                                AVDTP_SINK_FEATURE_MASK_HEADPHONE, NULL, NULL);
-    btstack_assert(de_get_len(sdp_avdtp_sink_service_buffer) <= sizeof(sdp_avdtp_sink_service_buffer));
-    sdp_register_service(sdp_avdtp_sink_service_buffer);
-
-    // - Create AVRCP Controller service record and register it with SDP. We send Category 1 commands to the media player, e.g. play/pause
-    memset(sdp_avrcp_controller_service_buffer, 0, sizeof(sdp_avrcp_controller_service_buffer));
-    uint16_t controller_supported_features = 1 << AVRCP_CONTROLLER_SUPPORTED_FEATURE_CATEGORY_PLAYER_OR_RECORDER;
-#ifdef AVRCP_BROWSING_ENABLED
-    controller_supported_features |= 1 << AVRCP_CONTROLLER_SUPPORTED_FEATURE_BROWSING;
-#endif
-    avrcp_controller_create_sdp_record(sdp_avrcp_controller_service_buffer, sdp_create_service_record_handle(),
-                                       controller_supported_features, NULL, NULL);
-    btstack_assert(de_get_len(sdp_avrcp_controller_service_buffer) <= sizeof(sdp_avrcp_controller_service_buffer));
-    sdp_register_service(sdp_avrcp_controller_service_buffer);
-
-    // - Create and register A2DP Sink service record
-    //   -  We receive Category 2 commands from the media player, e.g. volume up/down
-    memset(sdp_avrcp_target_service_buffer, 0, sizeof(sdp_avrcp_target_service_buffer));
-    uint16_t target_supported_features = 1 << AVRCP_TARGET_SUPPORTED_FEATURE_CATEGORY_MONITOR_OR_AMPLIFIER;
-    avrcp_target_create_sdp_record(sdp_avrcp_target_service_buffer,
-                                   sdp_create_service_record_handle(), target_supported_features, NULL, NULL);
-    btstack_assert(de_get_len(sdp_avrcp_target_service_buffer) <= sizeof(sdp_avrcp_target_service_buffer));
-    sdp_register_service(sdp_avrcp_target_service_buffer);
-
-    // - Create and register Device ID (PnP) service record
-    memset(device_id_sdp_service_buffer, 0, sizeof(device_id_sdp_service_buffer));
-    device_id_create_sdp_record(device_id_sdp_service_buffer,
-                                sdp_create_service_record_handle(), DEVICE_ID_VENDOR_ID_SOURCE_BLUETOOTH,
-                                BLUETOOTH_COMPANY_ID_BLUEKITCHEN_GMBH, 1, 1);
-    btstack_assert(de_get_len(device_id_sdp_service_buffer) <= sizeof(device_id_sdp_service_buffer));
-    sdp_register_service(device_id_sdp_service_buffer);
-
-    // Configure GAP - discovery / connection
-
-    // - Set local name with a template Bluetooth address, that will be automatically
-    //   replaced with an actual address once it is available, i.e. when BTstack boots
-    //   up and starts talking to a Bluetooth module.
-    gap_set_local_name("A2DP Sink Demo 00:00:00:00:00:00");
-
-    // - Allow to show up in Bluetooth inquiry
-    gap_discoverable_control(1);
-
-    // - Set Class of Device - Service Class: Audio, Major Device Class: Audio, Minor: Loudspeaker
-    gap_set_class_of_device(0x200414); // TODO: change for appropriate through macro
-
-    // - Allow for role switch in general and sniff mode
-    gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_ROLE_SWITCH | LM_LINK_POLICY_ENABLE_SNIFF_MODE);
-
-    // - Allow for role switch on outgoing connections
-    //   - This allows A2DP Source, e.g. smartphone, to become master when we re-connect to it.
-    gap_set_allow_role_switch(true);
-
-
-    // Register for HCI events
-    hci_event_callback_registration.callback = &hci_packet_handler;
-    hci_add_event_handler(&hci_event_callback_registration);
-
-    return 0;
+long map(long x, long in_min, long in_max, long out_min, long out_max) {
+    return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
 }
-/* LISTING_END */
 
+audio_element_handle_t bt_ael_mic;
+audio_element_handle_t bt_ael_spk;
 
+audio_event_iface_handle_t bt_evt_iface;
 
+static bt_event_data_t evt_data_arr[DEFAULT_AUDIO_EVENT_IFACE_SIZE]; // size depends on external queue size
+
+static bt_event_data_t *pick_event_data_ptr() {
+    static int ptr = 0;
+    if (ptr == DEFAULT_AUDIO_EVENT_IFACE_SIZE) ptr = 0;
+    return evt_data_arr + ptr++;
+}
+
+static void bt_evt_iface_send_cmd(bt_event_cmd_t cmd, bt_event_data_t *data) {
+    audio_event_iface_msg_t msg = {0};
+    msg.cmd = cmd;
+    msg.data = data;
+    msg.data_len = sizeof(bt_event_data_t);
+    msg.need_free_data = false;
+    msg.source = EVENT_SOURCE_FROM_BT;
+    msg.source_type = AUDIO_ELEMENT_TYPE_PERIPH;
+    audio_event_iface_sendout(bt_evt_iface, &msg);
+}
+
+// for a2dp sink
 static void handle_pcm_data(int16_t *data, int num_audio_frames, int num_channels, int sample_rate, void *context) {
     UNUSED(sample_rate);
     UNUSED(context);
     UNUSED(num_channels);   // must be stereo == 2
 
-//    const btstack_audio_sink_t * audio_sink = btstack_audio_sink_get_instance();
-//    if (!audio_sink){
-//#ifdef STORE_TO_WAV_FILE
-//        audio_frame_count += num_audio_frames;
-//        wav_writer_write_int16(num_audio_frames * NUM_CHANNELS, data);
-//#endif
-//        return;
-//    }
-
+    raw_stream_write(bt_ael_spk, reinterpret_cast<char *>(data), num_audio_frames * NUM_CHANNELS * sizeof(int16_t));
 }
 
 static int sbc_codec_init(media_codec_configuration_sbc_t *configuration) {
@@ -341,6 +278,8 @@ static int sbc_codec_init(media_codec_configuration_sbc_t *configuration) {
 static int read_media_data_header(uint8_t *packet, int size, int *offset, avdtp_media_packet_header_t *media_header);
 
 static int read_sbc_header(uint8_t *packet, int size, int *offset, avdtp_sbc_codec_header_t *sbc_header);
+
+//
 
 static void handle_l2cap_media_data_packet(uint8_t seid, uint8_t *packet, uint16_t size) {
     UNUSED(seid);
@@ -418,15 +357,45 @@ static void dump_sbc_configuration(media_codec_configuration_sbc_t *configuratio
     printf("\n");
 }
 
+
 static void hci_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {
     UNUSED(channel);
     UNUSED(size);
-    if (packet_type != HCI_EVENT_PACKET) return;
-    if (hci_event_packet_get_type(packet) == HCI_EVENT_PIN_CODE_REQUEST) {
-        bd_addr_t address;
-        printf("Pin code request - using '0000'\n");
-        hci_event_pin_code_request_get_bd_addr(packet, address);
-        gap_pin_code_response(address, "0000");
+    bd_addr_t event_addr;
+
+    switch (packet_type) {
+        case HCI_SCO_DATA_PACKET:
+            // forward received SCO / audio packets to SCO component
+            if (READ_SCO_CONNECTION_HANDLE(packet) != sco_handle) break;
+            sco_demo_receive(packet, size);
+            break;
+
+        case HCI_EVENT_PACKET:
+            switch (hci_event_packet_get_type(packet)) {
+                case BTSTACK_EVENT_STATE:
+                    // list supported codecs after stack has started up
+                    if (btstack_event_state_get_state(packet) != HCI_STATE_WORKING) break;
+                    printf("dump_supported_codecs\n");
+                    break;
+
+                case HCI_EVENT_PIN_CODE_REQUEST:
+                    // inform about pin code request and respond with '0000'
+                    printf("Pin code request - using '0000'\n");
+                    hci_event_pin_code_request_get_bd_addr(packet, event_addr);
+                    gap_pin_code_response(event_addr, "0000");
+                    break;
+
+                case HCI_EVENT_SCO_CAN_SEND_NOW:
+                    sco_demo_send(sco_handle);
+                    break;
+
+                default:
+                    break;
+            }
+            break;
+
+        default:
+            break;
     }
 }
 
@@ -645,13 +614,15 @@ static void avrcp_target_packet_handler(uint8_t packet_type, uint16_t channel, u
     avrcp_operation_id_t operation_id;
 
     switch (packet[2]) {
-        case AVRCP_SUBEVENT_NOTIFICATION_VOLUME_CHANGED:
+        case AVRCP_SUBEVENT_NOTIFICATION_VOLUME_CHANGED: {
             volume = avrcp_subevent_notification_volume_changed_get_absolute_volume(packet);
             volume_percentage = volume * 100 / 127;
             printf("AVRCP Target    : Volume set to %d%% (%d)\n", volume_percentage, volume);
-            avrcp_volume_changed(volume);
+            bt_event_data_t *evt_data = pick_event_data_ptr();
+            evt_data->absolute_volume = volume;
+            bt_evt_iface_send_cmd(SPK_ABS_VOL_DATA, evt_data);
             break;
-
+        }
         case AVRCP_SUBEVENT_OPERATION:
             operation_id = static_cast<avrcp_operation_id_t>(avrcp_subevent_operation_get_operation_id(packet));
             button_state = avrcp_subevent_operation_get_button_pressed(packet) > 0 ? "PRESS" : "RELEASE";
@@ -757,39 +728,291 @@ static void a2dp_sink_packet_handler(uint8_t packet_type, uint16_t channel, uint
             a2dp_sink_start_stream_accept(a2dp_cid, a2dp_local_seid);
             break;
 #endif
-        case A2DP_SUBEVENT_STREAM_STARTED:
+        case A2DP_SUBEVENT_STREAM_STARTED: {
             printf("A2DP  Sink      : Stream started\n");
             a2dp_conn->stream_state = STREAM_STATE_PLAYING;
             if (a2dp_conn->sbc_configuration.reconfigure) {
-                media_processing_close(); // iface cmd reconfigure -> i2s_set_clk on the other end
+                printf("A2DP  Sink      : Stream reconfigure\n");
+//                media_processing_close(); // iface cmd reconfigure -> i2s_set_clk on the other end
             }
+            auto *conf = &a2dp_sink_demo_a2dp_connection.sbc_configuration;
+            audio_element_set_music_info(bt_ael_spk, conf->sampling_frequency,
+                                         conf->channel_mode == SBC_CHANNEL_MODE_MONO ? 1 : 2,
+                                         conf->block_length);
+            audio_element_report_info(bt_ael_spk);
+
             // prepare media processing
             sbc_codec_init(&a2dp_conn->sbc_configuration);
             // audio stream is started when buffer reaches minimal level
             break;
-
+        }
         case A2DP_SUBEVENT_STREAM_SUSPENDED:
             printf("A2DP  Sink      : Stream paused\n");
             a2dp_conn->stream_state = STREAM_STATE_PAUSED;
-            media_processing_pause();
+//            media_processing_pause();
             break;
 
         case A2DP_SUBEVENT_STREAM_RELEASED:
             printf("A2DP  Sink      : Stream released\n");
             a2dp_conn->stream_state = STREAM_STATE_CLOSED;
-            media_processing_close();
+//            media_processing_close();
             break;
 
         case A2DP_SUBEVENT_SIGNALING_CONNECTION_RELEASED:
             printf("A2DP  Sink      : Signaling connection released\n");
             a2dp_conn->a2dp_cid = 0;
-            media_processing_close();
+//            media_processing_close();
             break;
 
         default:
             break;
     }
 }
+
+static void hfp_hf_packet_handler(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t event_size) {
+    UNUSED(channel);
+    uint8_t status;
+    bd_addr_t event_addr;
+
+    switch (packet_type) {
+        case HCI_SCO_DATA_PACKET:
+            if (READ_SCO_CONNECTION_HANDLE(event) != sco_handle) break;
+            sco_demo_receive(event, event_size); // -> pcm_cb
+            break;
+
+        case HCI_EVENT_PACKET:
+            switch (hci_event_packet_get_type(event)) {
+                case BTSTACK_EVENT_STATE:
+                    if (btstack_event_state_get_state(event) != HCI_STATE_WORKING) break;
+                    printf("dump_supported_codecs\n");
+                    break;
+
+                case HCI_EVENT_PIN_CODE_REQUEST:
+                    // inform about pin code request
+                    printf("Pin code request - using '0000'\n");
+                    hci_event_pin_code_request_get_bd_addr(event, event_addr);
+                    gap_pin_code_response(event_addr, "0000");
+                    break;
+
+                case HCI_EVENT_SCO_CAN_SEND_NOW:
+                    sco_demo_send(sco_handle); // <- from pipeline element
+                    break;
+
+                case HCI_EVENT_HFP_META:
+                    switch (hci_event_hfp_meta_get_subevent_code(event)) {
+                        case HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_ESTABLISHED:
+                            status = hfp_subevent_service_level_connection_established_get_status(event);
+                            if (status != ERROR_CODE_SUCCESS) {
+                                printf("Connection failed, status 0x%02x\n", status);
+                                break;
+                            }
+                            acl_handle = hfp_subevent_service_level_connection_established_get_acl_handle(event);
+                            bd_addr_t device_addr;
+                            hfp_subevent_service_level_connection_established_get_bd_addr(event, device_addr);
+                            printf("Service level connection established %s.\n\n", bd_addr_to_str(device_addr));
+                            break;
+
+                        case HFP_SUBEVENT_SERVICE_LEVEL_CONNECTION_RELEASED:
+                            acl_handle = HCI_CON_HANDLE_INVALID;
+                            printf("Service level connection released.\n\n");
+                            break;
+
+                        case HFP_SUBEVENT_AUDIO_CONNECTION_ESTABLISHED:
+                            status = hfp_subevent_audio_connection_established_get_status(event);
+                            if (status != ERROR_CODE_SUCCESS) {
+                                printf("Audio connection establishment failed with status 0x%02x\n", status);
+                                break;
+                            }
+                            sco_handle = hfp_subevent_audio_connection_established_get_sco_handle(event);
+                            printf("Audio connection established with SCO handle 0x%04x.\n", sco_handle);
+                            negotiated_codec = hfp_subevent_audio_connection_established_get_negotiated_codec(event);
+                            switch (negotiated_codec) {
+                                case HFP_CODEC_CVSD:
+                                    printf("Using CVSD codec.\n");
+                                    break;
+                                case HFP_CODEC_MSBC:
+                                    printf("Using mSBC codec.\n");
+                                    break;
+                                case HFP_CODEC_LC3_SWB:
+                                    printf("Using LC3-SWB codec.\n");
+                                    break;
+                                default:
+                                    printf("Using unknown codec 0x%02x.\n", negotiated_codec);
+                                    break;
+                            }
+                            sco_demo_set_codec(negotiated_codec);
+                            hci_request_sco_can_send_now_event();
+                            break;
+
+                        case HFP_SUBEVENT_CALL_ANSWERED:
+                            printf("Call answered\n");
+                            break;
+
+                        case HFP_SUBEVENT_CALL_TERMINATED:
+                            printf("Call terminated\n");
+                            break;
+
+                        case HFP_SUBEVENT_AUDIO_CONNECTION_RELEASED: {
+                            sco_handle = HCI_CON_HANDLE_INVALID;
+                            printf("Audio connection released\n");
+                            sco_demo_close();
+                            break;
+                        }
+                        case HFP_SUBEVENT_COMPLETE:
+                            status = hfp_subevent_complete_get_status(event);
+                            if (status == ERROR_CODE_SUCCESS) {
+//                                printf("Cmd \'%c\' succeeded\n", cmd);
+                            } else {
+//                                printf("Cmd \'%c\' failed with status 0x%02x\n", cmd, status);
+                            }
+                            break;
+
+                        case HFP_SUBEVENT_AG_INDICATOR_MAPPING:
+                            printf("AG Indicator Mapping | INDEX %d: range [%d, %d], name '%s'\n",
+                                   hfp_subevent_ag_indicator_mapping_get_indicator_index(event),
+                                   hfp_subevent_ag_indicator_mapping_get_indicator_min_range(event),
+                                   hfp_subevent_ag_indicator_mapping_get_indicator_max_range(event),
+                                   (const char *) hfp_subevent_ag_indicator_mapping_get_indicator_name(event));
+                            break;
+
+                        case HFP_SUBEVENT_AG_INDICATOR_STATUS_CHANGED:
+                            printf("AG Indicator Status  | INDEX %d: status 0x%02x, '%s'\n",
+                                   hfp_subevent_ag_indicator_status_changed_get_indicator_index(event),
+                                   hfp_subevent_ag_indicator_status_changed_get_indicator_status(event),
+                                   (const char *) hfp_subevent_ag_indicator_status_changed_get_indicator_name(event));
+                            break;
+                        case HFP_SUBEVENT_NETWORK_OPERATOR_CHANGED:
+                            printf("NETWORK_OPERATOR_CHANGED, operator mode %d, format %d, name %s\n",
+                                   hfp_subevent_network_operator_changed_get_network_operator_mode(event),
+                                   hfp_subevent_network_operator_changed_get_network_operator_format(event),
+                                   (char *) hfp_subevent_network_operator_changed_get_network_operator_name(event));
+                            break;
+                        case HFP_SUBEVENT_EXTENDED_AUDIO_GATEWAY_ERROR:
+                            printf("EXTENDED_AUDIO_GATEWAY_ERROR_REPORT, status 0x%02x\n",
+                                   hfp_subevent_extended_audio_gateway_error_get_error(event));
+                            break;
+                        case HFP_SUBEVENT_START_RINGING:
+                            printf("** START Ringing **\n");
+                            break;
+                        case HFP_SUBEVENT_RING:
+                            printf("** Ring **\n");
+                            break;
+                        case HFP_SUBEVENT_STOP_RINGING:
+                            printf("** STOP Ringing **\n");
+                            break;
+                        case HFP_SUBEVENT_NUMBER_FOR_VOICE_TAG:
+                            printf("Phone number for voice tag: %s\n",
+                                   (const char *) hfp_subevent_number_for_voice_tag_get_number(event));
+                            break;
+                        case HFP_SUBEVENT_SPEAKER_VOLUME: {
+                            auto gain = hfp_subevent_speaker_volume_get_gain(event);
+                            printf("Speaker volume: gain %u\n",
+                                   gain);
+                            bt_event_data_t *evt_data = pick_event_data_ptr();
+                            evt_data->absolute_volume = map(gain, 0, 15, 0, 127);
+                            bt_evt_iface_send_cmd(SPK_ABS_VOL_DATA, evt_data);
+                            break;
+                        }
+                        case HFP_SUBEVENT_MICROPHONE_VOLUME: {
+                            auto gain = hfp_subevent_microphone_volume_get_gain(event);
+                            printf("Microphone volume: gain %u\n",
+                                   gain);
+                            bt_event_data_t *evt_data = pick_event_data_ptr();
+                            evt_data->absolute_volume = map(gain, 0, 15, 0, 127);
+                            bt_evt_iface_send_cmd(SPK_ABS_VOL_DATA, evt_data);
+                            break;
+                        }
+                        case HFP_SUBEVENT_CALLING_LINE_IDENTIFICATION_NOTIFICATION:
+                            printf("Caller ID, number '%s', alpha '%s'\n",
+                                   (const char *) hfp_subevent_calling_line_identification_notification_get_number(
+                                           event),
+                                   (const char *) hfp_subevent_calling_line_identification_notification_get_alpha(
+                                           event));
+                            break;
+                        case HFP_SUBEVENT_ENHANCED_CALL_STATUS:
+                            printf("Enhanced call status:\n");
+                            printf("  - call index: %d \n", hfp_subevent_enhanced_call_status_get_clcc_idx(event));
+                            printf("  - direction : %s \n",
+                                   hfp_enhanced_call_dir2str(hfp_subevent_enhanced_call_status_get_clcc_dir(event)));
+                            printf("  - status    : %s \n", hfp_enhanced_call_status2str(
+                                    hfp_subevent_enhanced_call_status_get_clcc_status(event)));
+                            printf("  - mode      : %s \n",
+                                   hfp_enhanced_call_mode2str(hfp_subevent_enhanced_call_status_get_clcc_mode(event)));
+                            printf("  - multipart : %s \n",
+                                   hfp_enhanced_call_mpty2str(hfp_subevent_enhanced_call_status_get_clcc_mpty(event)));
+                            printf("  - type      : %d \n", hfp_subevent_enhanced_call_status_get_bnip_type(event));
+                            printf("  - number    : %s \n", hfp_subevent_enhanced_call_status_get_bnip_number(event));
+                            break;
+
+                        case HFP_SUBEVENT_VOICE_RECOGNITION_ACTIVATED:
+                            status = hfp_subevent_voice_recognition_activated_get_status(event);
+                            if (status != ERROR_CODE_SUCCESS) {
+                                printf("Voice Recognition Activate command failed, status 0x%02x\n", status);
+                                break;
+                            }
+
+                            switch (hfp_subevent_voice_recognition_activated_get_enhanced(event)) {
+                                case 0:
+                                    printf("\nVoice recognition ACTIVATED\n\n");
+                                    break;
+                                default:
+                                    printf("\nEnhanced voice recognition ACTIVATED.\n");
+                                    printf("Start new audio enhanced voice recognition session \n\n");
+//                                           bd_addr_to_str(device_addr));
+                                    status = hfp_hf_enhanced_voice_recognition_report_ready_for_audio(acl_handle);
+                                    break;
+                            }
+                            break;
+
+                        case HFP_SUBEVENT_VOICE_RECOGNITION_DEACTIVATED:
+                            status = hfp_subevent_voice_recognition_deactivated_get_status(event);
+                            if (status != ERROR_CODE_SUCCESS) {
+                                printf("Voice Recognition Deactivate command failed, status 0x%02x\n", status);
+                                break;
+                            }
+                            printf("\nVoice Recognition DEACTIVATED\n\n");
+                            break;
+
+                        case HFP_SUBEVENT_ENHANCED_VOICE_RECOGNITION_HF_READY_FOR_AUDIO:
+                            status = hfp_subevent_enhanced_voice_recognition_hf_ready_for_audio_get_status(event);
+                            printf("Enhanced Voice recognition: READY FOR AUDIO command, status 0x%02x\n", status);
+                            break;
+
+                        case HFP_SUBEVENT_ENHANCED_VOICE_RECOGNITION_AG_READY_TO_ACCEPT_AUDIO_INPUT:
+                            printf("\nEnhanced Voice recognition AG status: AG READY TO ACCEPT AUDIO INPUT\n\n");
+                            break;
+                        case HFP_SUBEVENT_ENHANCED_VOICE_RECOGNITION_AG_IS_STARTING_SOUND:
+                            printf("\nEnhanced Voice recognition AG status: AG IS STARTING SOUND\n\n");
+                            break;
+                        case HFP_SUBEVENT_ENHANCED_VOICE_RECOGNITION_AG_IS_PROCESSING_AUDIO_INPUT:
+                            printf("\nEnhanced Voice recognition AG status: AG IS PROCESSING AUDIO INPUT\n\n");
+                            break;
+
+                        case HFP_SUBEVENT_ENHANCED_VOICE_RECOGNITION_AG_MESSAGE:
+                            printf("\nEnhanced Voice recognition AG message: \'%s\'\n",
+                                   hfp_subevent_enhanced_voice_recognition_ag_message_get_text(event));
+                            break;
+
+                        case HFP_SUBEVENT_ECHO_CANCELING_AND_NOISE_REDUCTION_DEACTIVATE:
+                            status = hfp_subevent_echo_canceling_and_noise_reduction_deactivate_get_status(event);
+                            printf("Echo Canceling and Noise Reduction Deactivate command, status 0x%02x\n", status);
+                            break;
+                        default:
+                            break;
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+            break;
+
+        default:
+            break;
+    }
+
+}
+
 
 #ifdef HAVE_BTSTACK_STDIN
 static void show_usage(void){
@@ -850,10 +1073,8 @@ static void show_usage(void){
 //#endif
 
 }
-#endif
 
-#ifdef HAVE_BTSTACK_STDIN
-static void stdin_process(char cmd){
+static void stdin_process(char cmd) {
     uint8_t status = ERROR_CODE_SUCCESS;
     uint8_t volume;
     avrcp_battery_status_t old_battery_status;
@@ -1013,25 +1234,6 @@ static void stdin_process(char cmd){
             printf("AVRCP: release long button press REWIND\n");
             status = avrcp_controller_release_press_and_hold_cmd(avrcp_connection->avrcp_cid);
             break;
-//#ifdef ENABLE_AVRCP_COVER_ART
-//            case 'd':
-//            printf(" - Create AVRCP Cover Art connection to addr %s.\n", bd_addr_to_str(device_addr));
-//            status = a2dp_sink_demo_cover_art_connect();
-//            break;
-//        case 'D':
-//            printf(" - AVRCP Cover Art disconnect from addr %s.\n", bd_addr_to_str(device_addr));
-//            status = avrcp_cover_art_client_disconnect(a2dp_sink_demo_cover_art_cid);
-//            break;
-//        case '@':
-//            printf("Get linked thumbnail for '%s'\n", a2dp_sink_demo_image_handle);
-//#ifdef HAVE_POSIX_FILE_IO
-//            a2dp_sink_cover_art_file = fopen(a2dp_sink_demo_thumbnail_path, "w");
-//#endif
-//            a2dp_sink_cover_art_download_active = true;
-//            a2dp_sink_cover_art_file_size = 0;
-//            status = avrcp_cover_art_client_get_linked_thumbnail(a2dp_sink_demo_cover_art_cid, a2dp_sink_demo_image_handle);
-//            break;
-//#endif
         default:
             show_usage();
             return;
@@ -1042,11 +1244,144 @@ static void stdin_process(char cmd){
 }
 #endif
 
-int btstack_main(int argc, const char *argv[]) {
-    UNUSED(argc);
-    (void) argv;
+int btstack_main() {
+//    UNUSED(argc);
+//    (void) argv;
 
-    setup_demo();
+    raw_stream_cfg_t r_cfg = RAW_STREAM_CFG_DEFAULT();
+    r_cfg.type = AUDIO_STREAM_WRITER;
+    bt_ael_spk = raw_stream_init(&r_cfg);
+    r_cfg.type = AUDIO_STREAM_READER;
+    bt_ael_mic = raw_stream_init(&r_cfg);
+
+    audio_event_iface_cfg_t evt_iface_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    evt_iface_cfg.internal_queue_size = 0;
+    evt_iface_cfg.external_queue_size = DEFAULT_AUDIO_EVENT_IFACE_SIZE;
+    bt_evt_iface = audio_event_iface_init(&evt_iface_cfg);
+
+    // init protocols
+    l2cap_init();
+    rfcomm_init();
+    sdp_init();
+#ifdef ENABLE_BLE
+    // Initialize LE Security Manager. Needed for cross-transport key derivation
+    sm_init();
+#endif
+
+    // Init profiles
+    uint16_t hf_supported_features =
+            (1 << HFP_HFSF_ESCO_S4) |
+//            (1 << HFP_HFSF_CLI_PRESENTATION_CAPABILITY) |
+//            (1 << HFP_HFSF_HF_INDICATORS) |
+            (1 << HFP_HFSF_CODEC_NEGOTIATION) |
+//            (1 << HFP_HFSF_ENHANCED_CALL_STATUS) |
+//            (1 << HFP_HFSF_VOICE_RECOGNITION_FUNCTION) |
+//            (1 << HFP_HFSF_ENHANCED_VOICE_RECOGNITION_STATUS) |
+//            (1 << HFP_HFSF_VOICE_RECOGNITION_TEXT) |
+//            (1 << HFP_HFSF_EC_NR_FUNCTION) |
+            (1 << HFP_HFSF_REMOTE_VOLUME_CONTROL);
+
+    hfp_hf_init(rfcomm_channel_nr);
+    hfp_hf_init_supported_features(hf_supported_features);
+    hfp_hf_init_hf_indicators(sizeof(indicators) / sizeof(uint16_t), indicators);
+    hfp_hf_init_codecs(sizeof(codecs), codecs);
+    hfp_hf_register_packet_handler(hfp_hf_packet_handler);
+
+    a2dp_sink_init();
+    avrcp_init();
+    avrcp_controller_init();
+    avrcp_target_init();
+
+    // Configure A2DP Sink
+    a2dp_sink_register_packet_handler(&a2dp_sink_packet_handler);
+    a2dp_sink_register_media_handler(&handle_l2cap_media_data_packet);
+    a2dp_sink_demo_stream_endpoint_t *stream_endpoint = &a2dp_sink_demo_stream_endpoint;
+    avdtp_stream_endpoint_t *local_stream_endpoint =
+            a2dp_sink_create_stream_endpoint(AVDTP_AUDIO, AVDTP_CODEC_SBC,
+                                             media_sbc_codec_capabilities, sizeof(media_sbc_codec_capabilities),
+                                             stream_endpoint->media_sbc_codec_configuration,
+                                             sizeof(stream_endpoint->media_sbc_codec_configuration));
+    btstack_assert(local_stream_endpoint != NULL);
+    // - Store stream enpoint's SEP ID, as it is used by A2DP API to identify the stream endpoint
+    stream_endpoint->a2dp_local_seid = avdtp_local_seid(local_stream_endpoint);
+
+
+    // Configure AVRCP Controller + Target
+    avrcp_register_packet_handler(&avrcp_packet_handler);
+    avrcp_controller_register_packet_handler(&avrcp_controller_packet_handler);
+    avrcp_target_register_packet_handler(&avrcp_target_packet_handler);
+
+
+    // Configure SDP
+
+    // - Create and register A2DP Sink service record
+    memset(sdp_avdtp_sink_service_buffer, 0, sizeof(sdp_avdtp_sink_service_buffer));
+    a2dp_sink_create_sdp_record(sdp_avdtp_sink_service_buffer, sdp_create_service_record_handle(),
+                                AVDTP_SINK_FEATURE_MASK_HEADPHONE, NULL, NULL);
+    btstack_assert(de_get_len(sdp_avdtp_sink_service_buffer) <= sizeof(sdp_avdtp_sink_service_buffer));
+    sdp_register_service(sdp_avdtp_sink_service_buffer);
+
+
+    // - Create AVRCP Controller service record and register it with SDP. We send Category 1 commands to the media player, e.g. play/pause
+    memset(sdp_avrcp_controller_service_buffer, 0, sizeof(sdp_avrcp_controller_service_buffer));
+    uint16_t controller_supported_features = 1 << AVRCP_CONTROLLER_SUPPORTED_FEATURE_CATEGORY_PLAYER_OR_RECORDER;
+    avrcp_controller_create_sdp_record(sdp_avrcp_controller_service_buffer, sdp_create_service_record_handle(),
+                                       controller_supported_features, NULL, NULL);
+    btstack_assert(de_get_len(sdp_avrcp_controller_service_buffer) <= sizeof(sdp_avrcp_controller_service_buffer));
+    sdp_register_service(sdp_avrcp_controller_service_buffer);
+
+    // - Create and register A2DP Sink service record
+    //   -  We receive Category 2 commands from the media player, e.g. volume up/down
+    memset(sdp_avrcp_target_service_buffer, 0, sizeof(sdp_avrcp_target_service_buffer));
+    uint16_t target_supported_features = 1 << AVRCP_TARGET_SUPPORTED_FEATURE_CATEGORY_MONITOR_OR_AMPLIFIER;
+    avrcp_target_create_sdp_record(sdp_avrcp_target_service_buffer,
+                                   sdp_create_service_record_handle(), target_supported_features, NULL, NULL);
+    btstack_assert(de_get_len(sdp_avrcp_target_service_buffer) <= sizeof(sdp_avrcp_target_service_buffer));
+    sdp_register_service(sdp_avrcp_target_service_buffer);
+
+    // - Create and register Device ID (PnP) service record
+    memset(device_id_sdp_service_buffer, 0, sizeof(device_id_sdp_service_buffer));
+    device_id_create_sdp_record(device_id_sdp_service_buffer,
+                                sdp_create_service_record_handle(), DEVICE_ID_VENDOR_ID_SOURCE_BLUETOOTH,
+                                BLUETOOTH_COMPANY_ID_BLUEKITCHEN_GMBH, 1, 1);
+    btstack_assert(de_get_len(device_id_sdp_service_buffer) <= sizeof(device_id_sdp_service_buffer));
+    sdp_register_service(device_id_sdp_service_buffer);
+
+    // - Create and register HFP HF service record
+    memset(hfp_service_buffer, 0, sizeof(hfp_service_buffer));
+    hfp_hf_create_sdp_record_with_codecs(hfp_service_buffer, sdp_create_service_record_handle(),
+                                         rfcomm_channel_nr, hfp_hf_service_name, hf_supported_features, sizeof(codecs),
+                                         codecs);
+    btstack_assert(de_get_len(hfp_service_buffer) <= sizeof(hfp_service_buffer));
+    sdp_register_service(hfp_service_buffer);
+
+    // Configure GAP - discovery / connection
+
+    // - Set local name with a template Bluetooth address, that will be automatically
+    //   replaced with an actual address once it is available, i.e. when BTstack boots
+    //   up and starts talking to a Bluetooth module.
+    gap_set_local_name("A2DP Sink Demo 00:00:00:00:00:00");
+
+    // - Allow to show up in Bluetooth inquiry
+    gap_discoverable_control(1);
+
+    // - Set Class of Device - Service Class: Audio, Major Device Class: Audio, Minor: Headphones
+    gap_set_class_of_device(0x240404); // TODO: change for appropriate through macro
+
+    // - Allow for role switch in general and sniff mode
+    gap_set_default_link_policy_settings(LM_LINK_POLICY_ENABLE_ROLE_SWITCH);
+
+    // - Allow for role switch on outgoing connections
+    //   - This allows A2DP Source, e.g. smartphone, to become master when we re-connect to it.
+    gap_set_allow_role_switch(true);
+
+    // Register for HCI events
+    hci_event_callback_registration.callback = &hci_packet_handler;
+    hci_add_event_handler(&hci_event_callback_registration);
+
+    hci_register_sco_packet_handler(&hci_packet_handler);
+
+    sco_demo_init();
 
 #ifdef HAVE_BTSTACK_STDIN
     // parse human-readable Bluetooth address

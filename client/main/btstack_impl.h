@@ -13,31 +13,40 @@
 
 #include "btstack.h"
 
+#include "audio_element.h"
+#include "raw_stream.h"
+
+extern audio_element_handle_t bt_ael_mic;
+extern audio_element_handle_t bt_ael_spk;
+
+extern uint8_t sdp_avdtp_sink_service_buffer[150]; // TODO: needs to be reworked
+typedef void* event_bt_source_t;
+#define EVENT_SOURCE_FROM_BT event_bt_source_t(sdp_avdtp_sink_service_buffer)
+
+long map(long x, long in_min, long in_max, long out_min, long out_max);
+
+extern audio_event_iface_handle_t bt_evt_iface;
+
+enum bt_event_cmd_t {
+    MIC_ABS_VOL_DATA = 0,
+    SPK_ABS_VOL_DATA,
+
+};
+
+union bt_event_data_t {
+    struct {
+        uint8_t absolute_volume; // 0..127
+    };
+    // expand for hfp stuff
+};
+
+int btstack_main();
+
 class bluetooth_controller_t {
 public:
     // TODO: connect a2dp.cpp file data callbacks to raw_stream (write - a2dp / write, read - hfp
     // TODO: connect avrcp commands callbacks to event_iface
     // TODO: set event_iface_listener for main_thread messages, including start/stop cmds
-
-
-    void start() {
-        // TODO: create thread
-        // Enter run loop (forever)
-        btstack_run_loop_execute();
-    }
-
-    void stop() {}
-
-    audio_element_handle_t get_sink_audio_element() {}
-
-    audio_element_handle_t get_source_audio_element() {}
-
-
-private:
-
-    void bt_sink_cb() {}
-
-    void bt_source_cb() {}
 };
 
 
