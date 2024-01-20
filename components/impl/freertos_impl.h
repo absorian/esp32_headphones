@@ -40,7 +40,7 @@ typedef freertos_mutex_t mutex_t;
 #endif
 
 #ifndef ESP_THREAD_PRIO
-#define ESP_THREAD_PRIO tskIDLE_PRIORITY
+#define ESP_THREAD_PRIO 5
 #endif
 
 class freertos_thread_t {
