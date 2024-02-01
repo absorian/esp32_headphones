@@ -42,3 +42,7 @@ void controller_t::remote_get_md(uint8_t *d) {
     cmd = NO_CMD;
     mutex.unlock();
 }
+
+controller_t::state_t controller_t::get_cur_state() {
+    return state;
+}

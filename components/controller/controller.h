@@ -49,8 +49,10 @@ public:
         return sizeof(data_block_t);
     }
 
+    state_t get_cur_state();
+
 protected:
-    virtual void on_remote_cmd_receive(cmd_t cmd) = 0;
+    virtual void on_remote_cmd_receive(cmd_t cmd) = 0; // TODO: rewrite as optional callbacks
 
     virtual void on_remote_state_change(state_t state) = 0;
 
