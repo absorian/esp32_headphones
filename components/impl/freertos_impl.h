@@ -44,19 +44,23 @@ typedef freertos_mutex_t mutex_t;
 #endif
 
 class freertos_thread_t {
-    const char* TAG = "FREERTOS_THREAD";
+    const char *TAG = "FREERTOS_THREAD";
 public:
     typedef void (*function_t)(void *);
 
-    explicit freertos_thread_t(function_t function, void *argument = nullptr) {
-        xTaskCreate(function, "", ESP_THREAD_STACK_DEPTH, argument,
-                    ESP_THREAD_PRIO,
-                    &handler);
-        configASSERT(handler);
-        vTaskSuspend(handler);
+    explicit freertos_thread_t(function_t function, void *argument = nullptr, uint32_t prio = ESP_THREAD_PRIO,
+                               uint32_t stack_size = ESP_THREAD_STACK_DEPTH) : function(function), argument(argument),
+                                                                               prio(prio), stack_size(stack_size) {}
+
+    ~freertos_thread_t() {
+        terminate();
     }
 
     void launch() {
+        if (!handler) {
+            xTaskCreate(function, "freertos_thread_t", stack_size, argument, prio, &handler);
+            configASSERT(handler);
+        }
         vTaskResume(handler);
     }
 
@@ -77,6 +81,11 @@ public:
     }
 
 private:
+    function_t function;
+    void *argument;
+    uint32_t prio;
+    uint32_t stack_size;
+
     TaskHandle_t handler = nullptr;
 };
 
