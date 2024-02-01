@@ -16,12 +16,6 @@
 #define loge(tag, fmt, ...) ESP_LOGE(tag, fmt, ##__VA_ARGS__)
 #include "freertos_impl.h"
 
-// Workaround for asio port
-// https://github.com/espressif/esp-idf/issues/3557
-#if (ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 0, 0))
-char* if_indextoname(unsigned int , char* ) { return nullptr; }
-unsigned int if_nametoindex(const char *ifname) { return 0; }
-#endif
 
 #else
 
