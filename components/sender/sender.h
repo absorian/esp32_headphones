@@ -22,8 +22,6 @@ public:
 private:
     void send_raw(uint8_t *data, size_t bytes);
 
-    void append_leftover(uint8_t *data, size_t bytes);
-
     controller_t *control;
 
     std::vector<uint8_t> buf;
