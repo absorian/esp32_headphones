@@ -14,7 +14,7 @@
 #define SAMPLE_RATE 44100
 #define PORT 533
 
-#define PIPE_WIDTH 1024 - (controller_t::md_size() / 4 + (controller_t::md_size() % 4 != 0)) * 4
+#define PIPE_WIDTH 960
 
 const char *TAG_GLOB = "Server";
 
