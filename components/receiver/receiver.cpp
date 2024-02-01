@@ -6,7 +6,7 @@
 
 receiver_t::receiver_t(controller_t *controller, size_t pipe_width) : control(controller),
                                                                       recv_thread(task_receive, this),
-                                                                      width(pipe_width) {}
+                                                                      width(pipe_width + controller_t::md_size()) {}
 
 receiver_t::receiver_t(size_t pipe_width) : receiver_t(nullptr, pipe_width) {}
 
@@ -40,12 +40,12 @@ void receiver_t::task_receive(void *param) {
     auto body = (receiver_t *) param;
 
     logi(body->TAG, "task_receive is started");
-    uint8_t data[body->width + controller_t::md_size()];
+    uint8_t data[body->width];
 
     udp_endpoint_t sender_endpoint;
     size_t received;
     while (true) {
-        received = body->socket.receive(data, body->width + controller_t::md_size(), sender_endpoint);
+        received = body->socket.receive(data, body->width, sender_endpoint);
 
         body->mutex.lock();
 
