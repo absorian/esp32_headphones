@@ -14,7 +14,7 @@ typedef asio::ip::udp::endpoint udp_endpoint_t;
 extern asio::io_context io_context_glob;
 
 class asio_udp_socket_t {
-    const char *TAG = "ASIO_UDP_SOCKET";
+    static constexpr char TAG[] = "ASIO_UDP_SOCKET";
 //    static asio::io_context io_context;
 public:
     asio_udp_socket_t() : socket_impl(io_context_glob, asio::ip::udp::v4()) {}
@@ -35,11 +35,17 @@ public:
     void send(const uint8_t *data, size_t bytes, const udp_endpoint_t &endpoint) {
         asio::error_code ec;
         socket_impl.send_to(asio::buffer(data, bytes), endpoint, 0, ec);
-        if (ec) logi(TAG, "error while sending: %s (%d)", ec.message().c_str(), ec.value());
+        if (ec) loge(TAG, "error while sending: %s (%d)", ec.message().c_str(), ec.value());
     }
 
     size_t receive(uint8_t *data, size_t max_bytes, udp_endpoint_t &endpoint) {
-        return socket_impl.receive_from(asio::buffer(data, max_bytes), endpoint);
+        asio::error_code ec;
+        size_t b = socket_impl.receive_from(asio::buffer(data, max_bytes), endpoint, 0, ec);
+        if (ec) {
+            loge(TAG, "error while receiving: %s (%d)",  ec.message().c_str(), ec.value());
+            return 0;
+        }
+        return b;
     }
 
 private:
