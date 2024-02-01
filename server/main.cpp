@@ -223,7 +223,6 @@ public:
         mic_enabled(false);
         spk_enabled(false);
         recv.stop();
-        spk.stop();
     }
 
     void send_state(state_t state) {
