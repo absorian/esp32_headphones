@@ -40,9 +40,9 @@ public:
     explicit p_thread_t(function_t function, void *argument = nullptr) : func(function), func_arg(argument) {}
 
     void launch() {
-        // see if the cast works
-        // it works!!
         pthread_create(&handler, nullptr, reinterpret_cast<void *(*)(void *)>(func), func_arg);
+        pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, nullptr);
+        pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, nullptr);
     }
 
     void wait() {
@@ -55,6 +55,7 @@ public:
 
     void terminate() {
         pthread_cancel(handler);
+//        pthread_join(handler, nullptr); // TODO
     }
 
     static void sleep(uint32_t ms) {
