@@ -15,7 +15,7 @@ ENDMACRO()
 
 project(server)
 
-set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD 17)
 
 #add_subdirectory($ENV{SFML} ${CMAKE_CURRENT_BINARY_DIR}/sfml)
 add_subdirectory($ENV{ASIO} ${CMAKE_CURRENT_BINARY_DIR}/asio)
