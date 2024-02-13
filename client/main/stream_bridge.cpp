@@ -110,8 +110,8 @@ int stream_bridge::write(const void *buffer, int len, uint32_t wait_time) {
         loge(TAG, "i2s write underrun: %d/%d", b, len);
         available_write = 0;
     } else {
-        available_write -= len;
-        if (available_write < 0) available_write = 0;
+        if (len > available_write) available_write = 0;
+        else available_write -= len;
     }
     return b;
 }
@@ -123,8 +123,8 @@ int stream_bridge::read(void *buffer, int len, uint32_t wait_time) {
         loge(TAG, "i2s read underrun: %d/%d", b, len);
         available_read = 0;
     } else {
-        available_read -= len;
-        if (available_read < 0) available_read = 0;
+        if (len > available_read) available_read = 0;
+        else available_read -= len;
     }
     return b;
 }
