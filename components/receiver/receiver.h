@@ -10,7 +10,7 @@
 #include "impl.h"
 
 class receiver_t {
-    const char *TAG = "Receiver";
+    static constexpr char TAG[] = "Receiver";
 public:
     typedef void (*receive_callback_t)(const uint8_t *, size_t, void *);
 

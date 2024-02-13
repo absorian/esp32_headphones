@@ -9,7 +9,7 @@
 #include "impl.h"
 
 class sender_t {
-    const char *TAG = "Sender";
+    static constexpr char TAG[] = "Sender";
 public:
     sender_t(controller_t *controller, size_t pipe_width);
 
