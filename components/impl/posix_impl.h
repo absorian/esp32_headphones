@@ -8,6 +8,12 @@
 #include <string>
 #include <pthread.h>
 
+class p_thread_t;
+
+#define logi(tag, fmt, ...) printf(LOG_COLOR(LOG_COLOR_GREEN) "I (%lld) %s: " fmt LOG_RESET_COLOR "\n", p_thread_t::get_time_ms(), tag, ##__VA_ARGS__)
+#define logp(tag, fmt, ...) printf(LOG_BOLD(LOG_COLOR_BLUE) "P %s: " fmt LOG_RESET_COLOR "\n", tag, ##__VA_ARGS__)
+#define loge(tag, fmt, ...) fprintf(stderr, LOG_COLOR(LOG_COLOR_RED) "E (%lld) %s: " fmt LOG_RESET_COLOR "\n", p_thread_t::get_time_ms(), tag, ##__VA_ARGS__)
+#define logr(fmt, ...) printf(LOG_COLOR(LOG_COLOR_GREEN) fmt LOG_RESET_COLOR, ##__VA_ARGS__)
 
 //
 class p_thread_t {
