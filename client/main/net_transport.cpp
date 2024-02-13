@@ -73,10 +73,10 @@ void send_state(controller_t::state_t state) {
     }
 }
 
-static void net_loop(void *) {
+[[noreturn]] static void net_loop(void *) {
     event_bridge::message_t msg;
     bool hdph_started = false;
-    int64_t rq_conn_stamp = get_time_ms();
+    int64_t rq_conn_stamp = thread_t::get_time_ms(); // wrong code style, should make more tasks
 
     while (true) {
         if (event_bridge::listen(evt_incoming, &msg, false) == ESP_OK) {
@@ -117,9 +117,9 @@ static void net_loop(void *) {
         }
 
         if (headphones->get_cur_state() == controller_t::DISCONNECT
-            && get_time_ms() - rq_conn_stamp > 500) {
+            && thread_t::get_time_ms() - rq_conn_stamp > 500) {
 
-            rq_conn_stamp = get_time_ms();
+            rq_conn_stamp = thread_t::get_time_ms();
             send_state(controller_t::FULL);
         }
 

@@ -2,37 +2,12 @@
 // Created by ism on 01.06.2023.
 //
 
-#ifndef ESP_IMPL_H
-#define ESP_IMPL_H
+#ifndef FREERTOS_IMPL_H
+#define FREERTOS_IMPL_H
 
-#include "esp_log.h"
 #include "esp_event.h"
-#include "asio.hpp"
+#include <ctime>
 
-//
-class freertos_mutex_t {
-    const char *TAG = "FREERTOS_MUTEX";
-public:
-    freertos_mutex_t() {
-        mutex_impl = xSemaphoreCreateMutex();
-        if (mutex_impl == nullptr) {
-            loge(TAG, "Mutex was not created");
-        }
-    }
-
-    inline void lock() {
-        xSemaphoreTake(mutex_impl, portMAX_DELAY);
-    }
-
-    inline void unlock() {
-        xSemaphoreGive(mutex_impl);
-    }
-
-private:
-    xSemaphoreHandle mutex_impl;
-};
-
-typedef freertos_mutex_t mutex_t;
 
 //
 #ifndef ESP_THREAD_STACK_DEPTH
@@ -44,7 +19,7 @@ typedef freertos_mutex_t mutex_t;
 #endif
 
 class freertos_thread_t {
-    const char *TAG = "FREERTOS_THREAD";
+    static constexpr char TAG[] = "FREERTOS_THREAD";
 public:
     typedef void (*function_t)(void *);
 
@@ -80,6 +55,12 @@ public:
         vTaskDelay(pdMS_TO_TICKS(ms));
     }
 
+    static time_t get_time_ms() {
+        struct timespec spec;
+        clock_gettime(CLOCK_MONOTONIC, &spec);
+        return spec.tv_sec * 1000L + spec.tv_nsec / (time_t) 1e6L;
+    }
+
 private:
     function_t function;
     void *argument;
@@ -91,4 +72,29 @@ private:
 
 typedef freertos_thread_t thread_t;
 
-#endif //ESP_IMPL_H
+//
+class freertos_mutex_t {
+    static constexpr char TAG[] = "FREERTOS_MUTEX";
+public:
+    freertos_mutex_t() {
+        mutex_impl = xSemaphoreCreateMutex();
+        if (mutex_impl == nullptr) {
+            loge(TAG, "Mutex was not created");
+        }
+    }
+
+    inline void lock() {
+        xSemaphoreTake(mutex_impl, portMAX_DELAY);
+    }
+
+    inline void unlock() {
+        xSemaphoreGive(mutex_impl);
+    }
+
+private:
+    xSemaphoreHandle mutex_impl;
+};
+
+typedef freertos_mutex_t mutex_t;
+
+#endif //FREERTOS_IMPL_H

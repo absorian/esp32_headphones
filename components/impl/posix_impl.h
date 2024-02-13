@@ -2,38 +2,16 @@
 // Created by ism on 01.06.2023.
 //
 
-#ifndef SFML_IMPL_H
-#define SFML_IMPL_H
+#ifndef POSIX_IMPL_H
+#define POSIX_IMPL_H
 
 #include <string>
 #include <pthread.h>
-#include <unistd.h>
 
-//
-class p_thread_mutex_t {
-    const char *TAG = "ESP_MUTEX";
-public:
-    p_thread_mutex_t() {
-        pthread_mutex_init(&mutex_impl, nullptr);
-    }
-
-    inline void lock() {
-        pthread_mutex_lock(&mutex_impl);
-    }
-
-    inline void unlock() {
-        pthread_mutex_unlock(&mutex_impl);
-    }
-
-private:
-    pthread_mutex_t mutex_impl;
-};
-
-typedef p_thread_mutex_t mutex_t;
 
 //
 class p_thread_t {
-    const char* TAG = "PTHREAD";
+    static constexpr char TAG[] = "PTHREAD";
 public:
     typedef void (*function_t)(void *);
 
@@ -63,6 +41,12 @@ public:
         nanosleep(&t, nullptr);
     }
 
+    static time_t get_time_ms() {
+        struct timespec spec;
+        clock_gettime(CLOCK_PROCESS_CPUTIME_ID, &spec);
+        return spec.tv_sec * 1000L + spec.tv_nsec / 1e6L;
+    }
+
 private:
     pthread_t handler = 0;
     function_t func;
@@ -71,4 +55,26 @@ private:
 
 typedef p_thread_t thread_t;
 
-#endif //SFML_IMPL_H
+//
+class p_thread_mutex_t {
+    static constexpr char TAG[] = "PTHREAD_MUTEX";
+public:
+    p_thread_mutex_t() {
+        pthread_mutex_init(&mutex_impl, nullptr);
+    }
+
+    inline void lock() {
+        pthread_mutex_lock(&mutex_impl);
+    }
+
+    inline void unlock() {
+        pthread_mutex_unlock(&mutex_impl);
+    }
+
+private:
+    pthread_mutex_t mutex_impl{};
+};
+
+typedef p_thread_mutex_t mutex_t;
+
+#endif //POSIX_IMPL_H
