@@ -3,16 +3,11 @@
 
 #include "event_bridge.h"
 
+ESP_EVENT_DECLARE_BASE(BT_TRANSPORT);
+
 namespace bt_transport {
 
-    event_bridge::source_t init();
-
-    enum connection_type_t {
-        CONN_TYPE_AVRCP,
-        CONN_TYPE_A2DP,
-        CONN_TYPE_HFP,
-        CONN_TYPE_HCI
-    };
+    void init();
 
 }
 

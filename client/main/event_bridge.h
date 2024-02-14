@@ -2,7 +2,7 @@
 #define EVENT_BRIDGE_H
 
 #include <stdint-gcc.h>
-#include <audio_event_iface.h>
+#include <esp_event.h>
 
 namespace event_bridge {
 
@@ -17,6 +17,9 @@ namespace event_bridge {
 
     union data_t {
         struct {
+            esp_event_base_t from;
+        };
+        struct {
             uint8_t absolute_volume; // 0..127
         };
         struct {
@@ -26,22 +29,14 @@ namespace event_bridge {
         // expand for hfp stuff
     };
 
-    typedef audio_event_iface_handle_t source_t;
-    typedef audio_event_iface_msg_t message_t;
+    esp_err_t set_listener(esp_event_base_t event_base, esp_event_handler_t event_handler, void* event_handler_arg = nullptr);
 
-    source_t create_source();
+    esp_err_t set_listener_specific(esp_event_base_t event_base, int32_t event_id,
+                                     esp_event_handler_t event_handler, void* event_handler_arg = nullptr);
 
-    data_t *get_data_container();
+    esp_err_t post(esp_event_base_t event_base, int32_t event_id, esp_event_base_t event_from_base,
+                   data_t* event_data = nullptr);
 
-    void send_service_event(source_t source, cmd_t cmd, data_t *data); // from service to client
-
-    void send_client_event(source_t source, cmd_t cmd, data_t *data); // from client to service
-
-    void set_client_listener(source_t source, source_t listener);
-
-    void set_service_listener(source_t source, source_t listener);
-
-    int listen(source_t source, message_t *msg, bool block);
 }
 
 #endif //EVENT_BRIDGE_H

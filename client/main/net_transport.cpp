@@ -2,6 +2,7 @@
 #include "stream_bridge.h"
 #include "common_util.h"
 
+#include <controller.h>
 #include <sender.h>
 #include <receiver.h>
 #include <impl.h>
@@ -16,7 +17,13 @@ static ip_address_t remote_addr;
 
 static void send_state(controller_t::state_t state);
 
-static void receive_handler(const uint8_t *, size_t, void *);
+static void receive_cb(const uint8_t *, size_t, void *);
+
+[[noreturn]] static void send_handler(void *ctx);
+
+[[noreturn]] static void ping_handler(void *ctx);
+
+static void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data);
 
 class headphones_t : public controller_t {
     const char *TAG = "Headphones";
@@ -54,16 +61,46 @@ protected:
     }
 };
 
-static event_bridge::source_t evt_source;
-static event_bridge::source_t evt_incoming;
-static thread_t *evt_thread;
+ESP_EVENT_DEFINE_BASE(NET_TRANSPORT);
+
+static thread_t *send_task;
+static thread_t *ping_task;
+
+static std::atomic<bool> net_started(false);
 
 static headphones_t *headphones;
 static sender_t *sender;
 static receiver_t *receiver;
 
-void receive_handler(const uint8_t *data, size_t len, void *) {
+void receive_cb(const uint8_t *data, size_t len, void *) {
     stream_bridge::write(data, len);
+}
+
+[[noreturn]] void send_handler(void *ctx) { // commit and make as sender_t cb
+    auto *buf = (uint8_t *) calloc(1, DMA_BUF_SIZE);
+    assert(buf);
+
+    while (true) {
+        if (!net_started || headphones->get_cur_state() != controller_t::FULL) {
+            thread_t::sleep(50);
+            continue;
+        }
+        int rx_available = stream_bridge::bytes_ready_to_read();
+        if (rx_available) {
+            if (rx_available > DMA_BUF_SIZE) rx_available = DMA_BUF_SIZE;
+            stream_bridge::read(buf, rx_available);
+            sender->send(buf, rx_available);
+        }
+    }
+}
+
+[[noreturn]] void ping_handler(void *ctx) {
+    while (true) {
+        if (net_started && headphones->get_cur_state() == controller_t::DISCONNECT) {
+            send_state(controller_t::FULL);
+        }
+        thread_t::sleep(500);
+    }
 }
 
 void send_state(controller_t::state_t state) {
@@ -73,83 +110,51 @@ void send_state(controller_t::state_t state) {
     }
 }
 
-[[noreturn]] static void net_loop(void *) {
-    event_bridge::message_t msg;
-    bool hdph_started = false;
-    int64_t rq_conn_stamp = thread_t::get_time_ms(); // wrong code style, should make more tasks
-
-    while (true) {
-        if (event_bridge::listen(evt_incoming, &msg, false) == ESP_OK) {
-            auto dat = reinterpret_cast<event_bridge::data_t *>(msg.data);
-            switch (static_cast<event_bridge::cmd_t>(msg.cmd)) {
-                case event_bridge::MIC_ABS_VOL_DATA:
-                    break;
-                case event_bridge::SPK_ABS_VOL_DATA:
-                    break;
-                case event_bridge::SVC_START:
-                    logi(TAG, "starting up headphones");
-                    stream_bridge::configure_sink(44100, 2, 16);
-                    stream_bridge::configure_source(44100, 1, 16);
-                    remote_port = PORT;
-                    remote_addr = HOST_ADDR;
-                    sender->set_endpoint(udp_endpoint_t(remote_addr, remote_port));
-                    receiver->start(remote_port);
-                    hdph_started = true;
-                    break;
-                case event_bridge::SVC_PAUSE:
-                    logi(TAG, "shutting down headphones");
-                    if (headphones->get_cur_state() != controller_t::DISCONNECT)
-                        send_state(controller_t::DISCONNECT);
-                    receiver->stop();
-                    hdph_started = false;
-                    break;
-                case event_bridge::CONNECTION_STATE:
-                    break;
-                case event_bridge::REQUEST_VOL_DATA:
-                    break;
-            }
-        }
-
-        thread_t::sleep(15); // for wdt TODO: figure out exact timings
-
-        if (!hdph_started) {
-            continue;
-        }
-
-        if (headphones->get_cur_state() == controller_t::DISCONNECT
-            && thread_t::get_time_ms() - rq_conn_stamp > 500) {
-
-            rq_conn_stamp = thread_t::get_time_ms();
-            send_state(controller_t::FULL);
-        }
-
-        if (headphones->get_cur_state() == controller_t::FULL) {
-            int rx_available = stream_bridge::bytes_ready_to_read();
-            if (rx_available) {
-                uint8_t rx_buf[rx_available];
-                stream_bridge::read(rx_buf, rx_available);
-                sender->send(rx_buf, rx_available);
-            }
-        }
-
+void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
+    auto dat = reinterpret_cast<event_bridge::data_t *>(event_data);
+    switch (static_cast<event_bridge::cmd_t>(event_id)) {
+        case event_bridge::MIC_ABS_VOL_DATA:
+            break;
+        case event_bridge::SPK_ABS_VOL_DATA:
+            break;
+        case event_bridge::SVC_START:
+            logi(TAG, "starting up net");
+            stream_bridge::configure_sink(44100, 2, 16);
+            stream_bridge::configure_source(44100, 1, 16);
+            remote_port = PORT;
+            remote_addr = HOST_ADDR;
+            sender->set_endpoint(udp_endpoint_t(remote_addr, remote_port));
+            receiver->start(remote_port); // TODO: do not bind on client
+            send_task->launch();
+            net_started = true;
+            break;
+        case event_bridge::SVC_PAUSE:
+            logi(TAG, "shutting down net");
+            if (headphones->get_cur_state() != controller_t::DISCONNECT)
+                send_state(controller_t::DISCONNECT);
+            receiver->stop();
+            send_task->terminate();
+            net_started = false;
+            break;
+        case event_bridge::CONNECTION_STATE:
+            break;
+        case event_bridge::REQUEST_VOL_DATA:
+            break;
     }
 }
 
-event_bridge::source_t net_transport::init() {
+void net_transport::init() {
     headphones = new headphones_t();
     sender = new sender_t(reinterpret_cast<controller_t *>(headphones), DMA_BUF_SIZE);
     receiver = new receiver_t(reinterpret_cast<controller_t *>(headphones), DMA_BUF_SIZE);
 
-    receiver->set_receive_callback(receive_handler, nullptr);
+    receiver->set_receive_callback(receive_cb, nullptr);
 
-    evt_source = event_bridge::create_source();
-    evt_incoming = event_bridge::create_source();
-    event_bridge::set_service_listener(evt_source, evt_incoming);
+    event_bridge::set_listener(NET_TRANSPORT, event_cb);
 
-    evt_thread = new thread_t(net_loop, nullptr);
-    evt_thread->launch();
-
-    return evt_source;
+    send_task = new thread_t(send_handler, nullptr, 5); // TODO: manipulate stack size
+    ping_task = new thread_t(ping_handler, nullptr, 0); // manipulate stack size
+    ping_task->launch();
 }
 
 // TODO: write net_transport::deinit

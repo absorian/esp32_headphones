@@ -3,9 +3,11 @@
 
 #include "event_bridge.h"
 
+ESP_EVENT_DECLARE_BASE(NET_TRANSPORT);
+
 namespace net_transport {
 
-    event_bridge::source_t init();
+    void init();
 
 }
 
