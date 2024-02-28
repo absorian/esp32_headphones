@@ -6,7 +6,7 @@
 
 receiver_t::receiver_t(controller_t *controller, size_t pipe_width) : control(controller),
                                                                       recv_thread(task_receive, this),
-                                                                      width(pipe_width + controller_t::md_size()) {}
+                                                                      width(pipe_width) {}
 
 receiver_t::receiver_t(size_t pipe_width) : receiver_t(nullptr, pipe_width) {}
 
@@ -30,22 +30,38 @@ void receiver_t::start(uint16_t port) {
     recv_thread.launch();
 }
 
+void receiver_t::start() {
+    recv_thread.launch();
+}
+
 void receiver_t::stop() {
     mutex.lock();
     recv_thread.terminate();
     mutex.unlock();
 }
 
+size_t receiver_t::receive(uint8_t *data, size_t bytes) {
+    udp_endpoint_t sender_endpoint;
+    size_t received = socket.receive(data, bytes, sender_endpoint);
+    mutex.lock();
+    endpoint = sender_endpoint;
+    mutex.unlock();
+    if (control != nullptr)
+        control->remote_set_md(data + received - controller_t::md_size());
+
+    return received;
+}
+
 void receiver_t::task_receive(void *param) {
     auto body = (receiver_t *) param;
 
     logi(body->TAG, "task_receive is started");
-    uint8_t data[body->width];
+    uint8_t data[body->width + controller_t::md_size()];
 
     udp_endpoint_t sender_endpoint;
     size_t received;
     while (true) {
-        received = body->socket.receive(data, body->width, sender_endpoint);
+        received = body->socket.receive(data, body->width + controller_t::md_size(), sender_endpoint);
 
         body->mutex.lock();
 

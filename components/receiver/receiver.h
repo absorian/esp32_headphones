@@ -24,7 +24,11 @@ public:
 
     void start(uint16_t port);
 
+    void start();
+
     void stop();
+
+    size_t receive(uint8_t *data, size_t bytes);
 
 private:
     [[noreturn]] static void task_receive(void *param);
