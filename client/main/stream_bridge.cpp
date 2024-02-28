@@ -160,6 +160,7 @@ void stream_bridge::configure_source(int sample_rates, int channels, int bits) {
     logi(TAG, "source reconfigured to sr: %d, ch: %d, bt: %d", sample_rates, channels, bits);
 }
 
+// TODO: make volume adjusting support (atomic op)
 void stream_bridge::set_source_volume(int vol) {
 
 }

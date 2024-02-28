@@ -26,6 +26,7 @@
 
 #endif
 
+// TODO: rewrite to lwip instead of asio on ESP_PLATFORM
 #include "asio_impl.h"
 
 #endif //IMPL_H
