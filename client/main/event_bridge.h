@@ -25,6 +25,8 @@ namespace event_bridge {
         };
     };
 
+    esp_err_t init();
+
     esp_err_t set_listener(esp_event_base_t event_base, esp_event_handler_t event_handler, void* event_handler_arg = nullptr);
 
     esp_err_t set_listener_specific(esp_event_base_t event_base, int32_t event_id,

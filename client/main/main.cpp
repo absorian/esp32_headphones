@@ -67,7 +67,7 @@ extern "C" [[noreturn]] int app_main(void) {
     esp_netif_init();
     ESP_ERROR_CHECK(esp_event_loop_create_default());
     ESP_ERROR_CHECK(example_connect());
-
+    event_bridge::init();
     stream_bridge::init();
 
     net_transport::init();
