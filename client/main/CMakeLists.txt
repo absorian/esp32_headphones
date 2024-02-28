@@ -3,6 +3,7 @@ idf_component_register(SRCS "main.cpp"
         "event_bridge.cpp" "event_bridge.h"
         "bt_transport.cpp" "bt_transport.h"
         "net_transport.cpp" "net_transport.h"
+        "wifi_util.cpp" "wifi_util.h"
         "sco_util.cpp" "sco_util.h"
         "common_util.cpp" "common_util.h"
         INCLUDE_DIRS ".")

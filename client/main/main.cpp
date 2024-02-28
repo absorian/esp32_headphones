@@ -19,6 +19,7 @@
 #include "event_bridge.h"
 #include "bt_transport.h"
 #include "net_transport.h"
+#include "wifi_util.h"
 
 #include <impl.h>
 
@@ -64,9 +65,6 @@ extern "C" [[noreturn]] int app_main(void) {
 
     esp_log_level_set("*", ESP_LOG_INFO);
 
-    esp_netif_init();
-    ESP_ERROR_CHECK(esp_event_loop_create_default());
-    ESP_ERROR_CHECK(example_connect());
     event_bridge::init();
     stream_bridge::init();
 

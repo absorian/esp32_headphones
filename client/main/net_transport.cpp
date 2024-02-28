@@ -1,5 +1,6 @@
 #include "net_transport.h"
 #include "stream_bridge.h"
+#include "wifi_util.h"
 #include "common_util.h"
 
 #include <controller.h>
@@ -119,6 +120,7 @@ void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t even
             break;
         case event_bridge::SVC_START:
             logi(TAG, "starting up net");
+            wifi_util::connect();
             stream_bridge::configure_sink(44100, 2, 16);
             stream_bridge::configure_source(44100, 1, 16);
             remote_port = PORT;
@@ -130,6 +132,7 @@ void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t even
             break;
         case event_bridge::SVC_PAUSE:
             logi(TAG, "shutting down net");
+            wifi_util::shutdown();
             if (headphones->get_cur_state() != controller_t::DISCONNECT)
                 send_state(controller_t::DISCONNECT);
             receiver->stop();
@@ -142,6 +145,8 @@ void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t even
 }
 
 void net_transport::init() {
+    wifi_util::init();
+
     headphones = new headphones_t();
     sender = new sender_t(reinterpret_cast<controller_t *>(headphones), DMA_BUF_SIZE);
     receiver = new receiver_t(reinterpret_cast<controller_t *>(headphones), DMA_BUF_SIZE);
