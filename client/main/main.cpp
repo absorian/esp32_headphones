@@ -28,23 +28,23 @@ static const char *TAG = "MAIN";
 static void main_event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     auto dat = reinterpret_cast<event_bridge::data_t *>(event_data);
     switch (static_cast<event_bridge::cmd_t>(event_id)) {
-        case event_bridge::MIC_ABS_VOL_DATA:
+        case event_bridge::VOL_DATA_MIC:
             logi(TAG, "Microphone volume set to %d", dat->absolute_volume);
             stream_bridge::set_source_volume(dat->absolute_volume);
             break;
-        case event_bridge::SPK_ABS_VOL_DATA:
+        case event_bridge::VOL_DATA_SPK:
             logi(TAG, "Speaker volume set to %d", dat->absolute_volume);
             stream_bridge::set_sink_volume(dat->absolute_volume);
             break;
-        case event_bridge::REQUEST_VOL_DATA: {
+        case event_bridge::VOL_DATA_RQ: {
             logi(TAG, "Volume data request from %s", dat->from);
             event_bridge::data_t evt_data{};
 
             evt_data.absolute_volume = stream_bridge::get_sink_volume();
-            event_bridge::post(dat->from, event_bridge::SPK_ABS_VOL_DATA, APPLICATION, &evt_data);
+            event_bridge::post(dat->from, event_bridge::VOL_DATA_SPK, APPLICATION, &evt_data);
 
             evt_data.absolute_volume = stream_bridge::get_source_volume();
-            event_bridge::post(dat->from, event_bridge::MIC_ABS_VOL_DATA, APPLICATION, &evt_data);
+            event_bridge::post(dat->from, event_bridge::VOL_DATA_MIC, APPLICATION, &evt_data);
             break;
         }
         default:

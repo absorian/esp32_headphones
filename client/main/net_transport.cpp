@@ -37,7 +37,7 @@ protected:
             logi(TAG, "from %s:%d connected with state %d", remote_addr.to_string().c_str(), remote_port, state);
         } else {
             logi(TAG, "got disconnected");
-            thread_t::sleep(500);
+            thread_t::sleep(500); // TODO: find another way to prevent instant reconnecting, mb packet time exchange
             return;
         }
 
@@ -82,7 +82,7 @@ void receive_cb(const uint8_t *data, size_t len, void *) {
 
     while (true) {
         if (!net_started || headphones->get_cur_state() != controller_t::FULL) {
-            thread_t::sleep(50);
+            thread_t::sleep(50); // TODO: add spin lock instead of delay
             continue;
         }
         int rx_available = stream_bridge::bytes_ready_to_read();
@@ -113,9 +113,9 @@ void send_state(controller_t::state_t state) {
 void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     auto dat = reinterpret_cast<event_bridge::data_t *>(event_data);
     switch (static_cast<event_bridge::cmd_t>(event_id)) {
-        case event_bridge::MIC_ABS_VOL_DATA:
+        case event_bridge::VOL_DATA_MIC:
             break;
-        case event_bridge::SPK_ABS_VOL_DATA:
+        case event_bridge::VOL_DATA_SPK:
             break;
         case event_bridge::SVC_START:
             logi(TAG, "starting up net");
@@ -136,9 +136,7 @@ void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t even
             send_task->terminate();
             net_started = false;
             break;
-        case event_bridge::CONNECTION_STATE:
-            break;
-        case event_bridge::REQUEST_VOL_DATA:
+        case event_bridge::VOL_DATA_RQ:
             break;
     }
 }

@@ -263,14 +263,14 @@ void bt_stack_event_handler(void* event_handler_arg, esp_event_base_t event_base
             gap_disconnect(acl_handle);
             hci_power_control(HCI_POWER_OFF);
             break;
-        case event_bridge::MIC_ABS_VOL_DATA: {
+        case event_bridge::VOL_DATA_MIC: {
             if (acl_handle == HCI_CON_HANDLE_INVALID) break;
             logi(TAG, "changing mic volume");
             int gain = map(dat->absolute_volume, 0, 127, 0, 15);
             hfp_hf_set_microphone_gain(acl_handle, gain);
             break;
         }
-        case event_bridge::SPK_ABS_VOL_DATA: {
+        case event_bridge::VOL_DATA_SPK: {
             if (acl_handle == HCI_CON_HANDLE_INVALID) break;
             logi(TAG, "changing spk volume");
             avrcp_target_volume_changed(avrcp_conn_info.avrcp_cid, dat->absolute_volume);
@@ -381,7 +381,7 @@ void a2dp_sink_cb(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16
             a2dp_conn_info.a2dp_local_seid = a2dp_subevent_stream_established_get_local_seid(packet);
 
             logi(TAG, "A2DP streaming connection is established");
-            event_bridge::post(APPLICATION, event_bridge::REQUEST_VOL_DATA, BT_TRANSPORT);
+            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_RQ, BT_TRANSPORT);
             break;
         case A2DP_SUBEVENT_STREAM_STARTED: {
             logi(TAG, "A2DP stream started");
@@ -544,7 +544,7 @@ void avrcp_target_cb(uint8_t packet_type, uint16_t channel, uint8_t *packet, uin
             event_bridge::data_t evt_data = {
                     .absolute_volume = volume
             };
-            event_bridge::post(APPLICATION, event_bridge::SPK_ABS_VOL_DATA, BT_TRANSPORT, &evt_data);
+            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_SPK, BT_TRANSPORT, &evt_data);
             break;
         }
         case AVRCP_SUBEVENT_OPERATION: {
@@ -605,7 +605,7 @@ void hfp_hf_cb(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t e
                             bd_addr_t device_addr;
                             hfp_subevent_service_level_connection_established_get_bd_addr(event, device_addr);
                             logi(TAG, "HFP service level connection established %s", bd_addr_to_str(device_addr));
-                            event_bridge::post(APPLICATION, event_bridge::REQUEST_VOL_DATA, BT_TRANSPORT);
+                            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_RQ, BT_TRANSPORT);
                             hfp_first_vol_set = 0;
                             break;
 
@@ -638,7 +638,7 @@ void hfp_hf_cb(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t e
                                     break;
                             }
                             sco_util::set_codec(hf_negotiated_codec);
-                            event_bridge::post(APPLICATION, event_bridge::REQUEST_VOL_DATA, BT_TRANSPORT);
+                            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_RQ, BT_TRANSPORT);
                             hci_request_sco_can_send_now_event();
                             break;
 
@@ -649,7 +649,7 @@ void hfp_hf_cb(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t e
                             stream_bridge::configure_sink(a2dp_conn_info.sbc_configuration.sampling_frequency,
                                                           a2dp_conn_info.sbc_configuration.num_channels,
                                                           a2dp_conn_info.sbc_configuration.block_length);
-                            event_bridge::post(APPLICATION, event_bridge::REQUEST_VOL_DATA, BT_TRANSPORT);
+                            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_RQ, BT_TRANSPORT);
                             break;
                         }
                         case HFP_SUBEVENT_COMPLETE: // Check status of the client-sent cmd
@@ -670,7 +670,7 @@ void hfp_hf_cb(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t e
                             event_bridge::data_t evt_data = {
                                     .absolute_volume = static_cast<uint8_t>(map(gain, 0, 15, 0, 127))
                             };
-                            event_bridge::post(APPLICATION, event_bridge::SPK_ABS_VOL_DATA, BT_TRANSPORT, &evt_data);
+                            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_SPK, BT_TRANSPORT, &evt_data);
                             break;
                         }
                         case HFP_SUBEVENT_MICROPHONE_VOLUME: {
@@ -683,7 +683,7 @@ void hfp_hf_cb(uint8_t packet_type, uint16_t channel, uint8_t *event, uint16_t e
                             event_bridge::data_t evt_data = {
                                     .absolute_volume = static_cast<uint8_t>(map(gain, 0, 15, 0, 127))
                             };
-                            event_bridge::post(APPLICATION, event_bridge::MIC_ABS_VOL_DATA, BT_TRANSPORT, &evt_data);
+                            event_bridge::post(APPLICATION, event_bridge::VOL_DATA_MIC, BT_TRANSPORT, &evt_data);
                             break;
                         }
                         default:
