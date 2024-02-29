@@ -33,11 +33,13 @@ event_bridge::set_listener(esp_event_base_t event_base, esp_event_handler_t even
 esp_err_t
 event_bridge::set_listener_specific(esp_event_base_t event_base, int32_t event_id, esp_event_handler_t event_handler,
                                     void *event_handler_arg) {
+    if (!evt_loop) return ESP_ERR_INVALID_STATE;
     return esp_event_handler_register_with(evt_loop, event_base, event_id, event_handler, event_handler_arg);
 }
 
 esp_err_t event_bridge::post(esp_event_base_t event_base, int32_t event_id, esp_event_base_t event_from_base,
                              data_t *event_data) {
+    if (!evt_loop) return ESP_ERR_INVALID_STATE;
     if (event_data) {
         event_data->from = event_from_base;
         return esp_event_post_to(evt_loop, event_base, event_id, event_data, sizeof (data_t), portMAX_DELAY);
