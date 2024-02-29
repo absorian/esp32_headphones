@@ -11,8 +11,8 @@ namespace event_bridge {
         VOL_DATA_SPK,
         VOL_DATA_RQ,
 
-        SVC_START,
-        SVC_PAUSE,
+        SVC_START, // TRT_START
+        SVC_PAUSE, // TRT_STOP .. TRT_DISCONNECT, TRT_CONNECT {creds}
 
     };
 
@@ -33,6 +33,9 @@ namespace event_bridge {
                                      esp_event_handler_t event_handler, void* event_handler_arg = nullptr);
 
     esp_err_t post(esp_event_base_t event_base, int32_t event_id, esp_event_base_t event_from_base,
+                   data_t* event_data = nullptr);
+
+    esp_err_t post_isr(esp_event_base_t event_base, int32_t event_id, esp_event_base_t event_from_base,
                    data_t* event_data = nullptr);
 
 }

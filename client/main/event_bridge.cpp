@@ -49,3 +49,16 @@ esp_err_t event_bridge::post(esp_event_base_t event_base, int32_t event_id, esp_
     };
     return esp_event_post_to(evt_loop, event_base, event_id, &dat, sizeof (data_t), portMAX_DELAY);
 }
+
+esp_err_t event_bridge::post_isr(esp_event_base_t event_base, int32_t event_id, esp_event_base_t event_from_base,
+                             data_t *event_data) {
+    if (!evt_loop) return ESP_ERR_INVALID_STATE;
+    if (event_data) {
+        event_data->from = event_from_base;
+        return esp_event_isr_post_to(evt_loop, event_base, event_id, event_data, sizeof (data_t), nullptr);
+    }
+    data_t dat = { // esp_event_post copies internally into heap
+            .from = event_from_base
+    };
+    return esp_event_isr_post_to(evt_loop, event_base, event_id, &dat, sizeof (data_t), nullptr);
+}
