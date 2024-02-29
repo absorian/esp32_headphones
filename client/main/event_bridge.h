@@ -14,6 +14,8 @@ namespace event_bridge {
         SVC_START, // TRT_START
         SVC_PAUSE, // TRT_STOP .. TRT_DISCONNECT, TRT_CONNECT {creds}
 
+        CTL_SWITCH_SVC,
+        CTL_GO_SLEEP
     };
 
     union data_t {

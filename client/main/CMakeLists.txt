@@ -6,4 +6,5 @@ idf_component_register(SRCS "main.cpp"
         "wifi_util.cpp" "wifi_util.h"
         "sco_util.cpp" "sco_util.h"
         "common_util.cpp" "common_util.h"
+        "ctl_periph.cpp" "ctl_periph.h"
         INCLUDE_DIRS ".")

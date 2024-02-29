@@ -8,8 +8,6 @@
 */
 #include <cstddef>
 #include <cinttypes>
-#include <esp_netif.h>
-#include <protocol_examples_common.h>
 #include "nvs_flash.h"
 #include "freertos/FreeRTOS.h"
 #include "esp_log.h"
@@ -20,11 +18,18 @@
 #include "bt_transport.h"
 #include "net_transport.h"
 #include "wifi_util.h"
+#include "ctl_periph.h"
 
 #include <impl.h>
 
 static const char *TAG = "MAIN";
 
+static const esp_event_base_t trts[] = {
+        NET_TRANSPORT,
+        BT_TRANSPORT
+};
+static const int trt_count = sizeof(trts) / sizeof(trts[0]);
+static int cur_trt = 0;
 
 static void main_event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t event_id, void *event_data) {
     auto dat = reinterpret_cast<event_bridge::data_t *>(event_data);
@@ -48,6 +53,15 @@ static void main_event_cb(void *event_handler_arg, esp_event_base_t event_base, 
             event_bridge::post(dat->from, event_bridge::VOL_DATA_MIC, APPLICATION, &evt_data);
             break;
         }
+        case event_bridge::CTL_SWITCH_SVC: {
+            logi(TAG, "Service switch request from %s", dat->from);
+            event_bridge::post(trts[cur_trt], event_bridge::SVC_PAUSE, APPLICATION);
+
+            cur_trt++;
+            if (cur_trt >= trt_count) cur_trt = 0;
+            logi(TAG, "New transport: %s (%d)", trts[cur_trt], cur_trt);
+            event_bridge::post(trts[cur_trt], event_bridge::SVC_START, APPLICATION);
+        }
         default:
             break;
     }
@@ -67,11 +81,13 @@ extern "C" [[noreturn]] int app_main(void) {
 
     event_bridge::init();
     stream_bridge::init();
+    ctl_periph::init();
 
     net_transport::init();
+    bt_transport::init();
 
     event_bridge::set_listener(APPLICATION, main_event_cb);
-    event_bridge::post(NET_TRANSPORT, event_bridge::SVC_START, APPLICATION);
+    event_bridge::post(trts[cur_trt], event_bridge::SVC_START, APPLICATION);
 
     while (true) {
         thread_t::sleep(500);
