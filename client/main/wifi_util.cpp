@@ -91,6 +91,7 @@ void wifi_util::shutdown() {
 
     if (ip_addr_sem) {
         vSemaphoreDelete(ip_addr_sem);
+        ip_addr_sem = nullptr;
     }
 
     ESP_ERROR_CHECK(esp_unregister_shutdown_handler(&shutdown));

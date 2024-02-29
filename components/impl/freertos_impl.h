@@ -57,6 +57,7 @@ public:
 
     void terminate() {
         vTaskDelete(handler);
+        handler = nullptr;
     }
 
     static void sleep(uint32_t ms) {
