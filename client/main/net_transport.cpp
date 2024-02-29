@@ -132,14 +132,16 @@ void event_cb(void *event_handler_arg, esp_event_base_t event_base, int32_t even
             break;
         case event_bridge::SVC_PAUSE:
             logi(TAG, "shutting down net");
-            wifi_util::shutdown();
             if (headphones->get_cur_state() != controller_t::DISCONNECT)
                 send_state(controller_t::DISCONNECT);
             receiver->stop();
             send_task->terminate();
+            wifi_util::shutdown();
             net_started = false;
             break;
         case event_bridge::VOL_DATA_RQ:
+            break;
+        default:
             break;
     }
 }
