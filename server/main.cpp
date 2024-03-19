@@ -1,7 +1,6 @@
-#include "impl.h"
-#include "controller.h"
-#include "sender.h"
-#include "receiver.h"
+#include <net_controller.h>
+#include <impl/log.h>
+#include <impl/concurrency.h>
 
 #include <portaudio.h>
 
@@ -12,9 +11,8 @@
 #define NUM_CHANNELS_SPK 2
 #define NUM_CHANNELS_MIC 1
 #define SAMPLE_RATE 44100
-#define PORT 533
 
-#define PIPE_WIDTH 960
+#define PORT 533
 
 const char *TAG_GLOB = "Server";
 
@@ -22,15 +20,14 @@ class remote_sink_t {
     const char *TAG = "Remote sink";
 
     typedef short sample_t;
-    static constexpr uint32_t frames_per_buf = PIPE_WIDTH / (NUM_CHANNELS_SPK * sizeof(sample_t));
+    static constexpr uint32_t frames_per_buf = DATA_WIDTH / (NUM_CHANNELS_SPK * sizeof(sample_t));
     static constexpr PaSampleFormat pa_sample_type = paInt16;
 public:
     ~remote_sink_t() {
         Pa_Terminate();
     }
 
-    explicit remote_sink_t(sender_t &sender)
-            : sender(sender) {
+    explicit remote_sink_t() {
         Pa_Initialize();
         pa_params.sampleFormat = pa_sample_type;
         pa_params.hostApiSpecificStreamInfo = nullptr;
@@ -76,20 +73,22 @@ public:
     }
 
     void start() {
-        Pa_OpenStream(
-                &stream,
-                &pa_params,
-                nullptr,
-                SAMPLE_RATE,
-                frames_per_buf,
-                paClipOff,      /* we won't output out of range samples so don't bother clipping them */
-                send_to_remote,
-                this);
+        if (!stream) {
+            Pa_OpenStream(
+                    &stream,
+                    &pa_params,
+                    nullptr,
+                    SAMPLE_RATE,
+                    frames_per_buf,
+                    paClipOff,      /* we won't output out of range samples so don't bother clipping them */
+                    send_to_remote,
+                    this);
+        }
         Pa_StartStream(stream);
     }
 
     void stop() {
-        Pa_CloseStream(stream);
+        Pa_StopStream(stream);
     }
 
 private:
@@ -100,36 +99,32 @@ private:
                               void *user_data) {
         auto *body = (remote_sink_t *) user_data;
 
-        // sender_t is thread safe
-        body->sender.send((uint8_t *) input_buf, frame_count * body->pa_params.channelCount * sizeof(sample_t));
+        sender::send((uint8_t *) input_buf, frame_count * body->pa_params.channelCount * sizeof(sample_t));
         return paContinue;
     }
 
     PaStreamParameters pa_params{};
-    PaStream *stream{};
-
-    sender_t &sender;
+    PaStream *stream = nullptr;
 };
 
 class remote_source_t {
     const char *TAG = "Remote source";
 
     typedef short sample_t;
-    static constexpr uint32_t frames_per_buf = PIPE_WIDTH / (NUM_CHANNELS_MIC * sizeof(sample_t));
+    static constexpr uint32_t frames_per_buf = DATA_WIDTH / (NUM_CHANNELS_MIC * sizeof(sample_t));
     static constexpr PaSampleFormat pa_sample_type = paInt16;
 public:
     ~remote_source_t() {
         Pa_Terminate();
     }
 
-    explicit remote_source_t(receiver_t &receiver)
-            : recv(receiver) {
+    explicit remote_source_t() {
         Pa_Initialize();
         pa_params.sampleFormat = pa_sample_type;
         pa_params.hostApiSpecificStreamInfo = nullptr;
         pa_params.channelCount = NUM_CHANNELS_MIC;
 
-        recv.set_receive_callback(on_receive_data, this);
+        receiver::set_cb(ctx_func_t(on_receive_data, this));
     }
 
     void selectDeviceCli() {
@@ -171,20 +166,22 @@ public:
     }
 
     void start() {
-        Pa_OpenStream(
-                &stream,
-                nullptr,
-                &pa_params,
-                SAMPLE_RATE,
-                frames_per_buf,
-                0,
-                nullptr,
-                nullptr);
+        if (!stream) {
+            Pa_OpenStream(
+                    &stream,
+                    nullptr,
+                    &pa_params,
+                    SAMPLE_RATE,
+                    frames_per_buf,
+                    0,
+                    nullptr,
+                    nullptr);
+        }
         Pa_StartStream(stream);
     }
 
     void stop() {
-        Pa_CloseStream(stream);
+        Pa_StopStream(stream);
     }
 
 private:
@@ -194,128 +191,90 @@ private:
     }
 
     PaStreamParameters pa_params{};
-    PaStream *stream{};
-
-    mutex_t mutex;
-
-    receiver_t &recv;
+    PaStream *stream = nullptr;
 };
 
-class headphones_t : public controller_t {
-    const char *TAG = "Headphones";
-public:
-    headphones_t() : snd(this, PIPE_WIDTH), recv(this, PIPE_WIDTH), spk(snd), mic(recv) {
+enum server_state_t {
+    SV_NOACCEPT = 0,
+    SV_ACCEPT,
+    SV_CONNECTED
+};
 
-        spk.selectDeviceCli();
-        mic.selectDeviceCli();
-    }
-
-    ~headphones_t() = default;
-
-    void start(uint16_t port) {
-        logi(TAG, "Starting to listen for connections");
-        recv.start(port);
-        remote_port = port;
-    }
-
-    void stop() {
-        logi(TAG, "Stopping");
-        mic_enabled(false);
-        spk_enabled(false);
-        recv.stop();
-    }
-
-    void send_state(state_t state) {
-        set_state(state);
-        // TODO: if spk enabled -> return;
-        snd.send_immediate(nullptr, 0);
-    }
-
-    void mic_enabled(bool en) {
-        static bool cur = false;
-        if (en == cur) return;
-
-        if ((cur = en)) {
-            mic.start();
-        } else {
-            mic.stop();
-        }
-    }
-
-    void spk_enabled(bool en) {
-        static bool cur = false;
-        if (en == cur) return;
-
-        if ((cur = en)) {
-            spk.start();
-        } else {
-            spk.stop();
-        }
-    }
-
-protected:
-    void on_remote_state_change(state_t state) override {
-        if (state >= STALL && !connected) {
-            logi(TAG, "Successfully connected to %s", recv.get_endpoint().address().to_string().c_str());
-            connected = true;
-            snd.set_endpoint(udp_endpoint_t(recv.get_endpoint().address(), remote_port));
-        } else if (state == DISCONNECT && connected) {
-            logi(TAG, "Got disconnected, stopping enabled devices");
-            connected = false;
-            mic_enabled(false);
-            spk_enabled(false);
-            thread_t::sleep(500);
-            return;
-        }
-
-        switch (state) {
-            case STALL:
-                logi(TAG, "The state is STALL");
-                spk_enabled(false);
-                mic_enabled(false);
-                break;
-            case SPK_ONLY:
-                logi(TAG, "The state is SPK_ONLY");
-                spk_enabled(true);
-                mic_enabled(false);
-                break;
-            case FULL:
-                logi(TAG, "The state is FULL");
-                spk_enabled(true);
-                mic_enabled(true);
-                break;
-            default:
-                break;
-        }
-    }
-
-    void on_remote_cmd_receive(cmd_t cmd) override {
-        logi(TAG, "Received a command: %d", cmd);
-    }
-
-private:
-    std::atomic<bool> connected{};
-
-    sender_t snd;
-    receiver_t recv;
-    uint16_t remote_port{};
-
+struct server_util_t {
     remote_sink_t spk;
     remote_source_t mic;
 };
+static std::atomic<server_state_t> conn_state;
 
+
+static int remote_cmd_cb(net_controller::cmd_t cmd, void *par) {
+    if (conn_state == SV_NOACCEPT) return -1;
+    auto ctx = reinterpret_cast<server_util_t*>(par);
+
+    logi(TAG_GLOB, "Received command: %d", cmd);
+
+    if (cmd == net_controller::ST_DISCONNECT) {
+        logi(TAG_GLOB, "Got disconnected");
+        ctx->spk.stop();
+        ctx->mic.stop();
+        conn_state = SV_ACCEPT;
+        return 0;
+    }
+    if (conn_state == SV_ACCEPT) {
+        endpoint_t enp;
+        receiver::get_endpoint(&enp);
+        char addr[16];
+        endpoint_get_addr_v4(&enp, addr);
+        logi(TAG_GLOB, "Successfully connected to %s:%d", addr, endpoint_get_port(&enp));
+        sender::set_endpoint(&enp);
+        conn_state = SV_CONNECTED;
+        ctx->spk.start();
+    }
+    switch (cmd) {
+        case net_controller::ST_SPK_ONLY:
+            ctx->mic.stop();
+            break;
+        case net_controller::ST_FULL:
+            ctx->mic.start();
+            break;
+        case net_controller::CTL_PLAY_PAUSE:
+            break;
+        case net_controller::CTL_NEXT:
+            break;
+        case net_controller::CTL_PREV:
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
 
 int main() {
-    headphones_t hf;
-    hf.start(PORT);
+    net_controller::init();
+
+    server_util_t util;
+
+    util.spk.selectDeviceCli();
+    util.mic.selectDeviceCli();
+
+    net_controller::set_remote_cmd_cb(ctx_func_t(remote_cmd_cb, &util));
+    net_controller::set_remote_ack_cb(ctx_func_t(remote_cmd_cb, &util));
+
+    conn_state = SV_ACCEPT;
+
+    receiver::bind(PORT);
+    receiver::start();
+
     char in;
-    while (1) {
+    while (true) {
         std::cin >> in;
         if (in == 'q') {
-            hf.send_state(controller_t::DISCONNECT);
+            bool connected = (conn_state == SV_CONNECTED);
+            conn_state = SV_NOACCEPT;
+            if (connected) net_controller::set_cmd(net_controller::ST_DISCONNECT, true);
             break;
         }
     }
-    hf.stop();
+    receiver::stop();
     return EXIT_SUCCESS;
 }

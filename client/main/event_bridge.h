@@ -1,7 +1,7 @@
 #ifndef EVENT_BRIDGE_H
 #define EVENT_BRIDGE_H
 
-#include <stdint-gcc.h>
+#include <cstdint>
 #include <esp_event.h>
 
 namespace event_bridge {

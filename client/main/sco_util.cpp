@@ -4,7 +4,7 @@
 #include <hfp_codec.h>
 #include <btstack_cvsd_plc.h>
 #include <btstack.h>
-#include <impl.h>
+#include <impl/log.h>
 
 #ifdef ENABLE_HFP_SUPER_WIDE_BAND_SPEECH
 #include "btstack_lc3.h"

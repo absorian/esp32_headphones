@@ -5,7 +5,7 @@
 #include <driver/i2s_std.h>
 #include <cstring>
 #include <atomic>
-#include <impl.h>
+#include <impl/log.h>
 
 static const char *TAG = "STREAM_BRIDGE";
 

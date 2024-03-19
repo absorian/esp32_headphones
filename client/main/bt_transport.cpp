@@ -3,7 +3,8 @@
 #include "stream_bridge.h"
 #include "common_util.h"
 
-#include <impl.h>
+#include <impl/log.h>
+#include <impl/concurrency.h>
 #include <btstack.h>
 #include <btstack_port_esp32.h>
 #include <btstack_stdio_esp32.h>
@@ -112,7 +113,7 @@ static void bt_stack_thread(void *);
 
 void bt_stack_event_handler(void* event_handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data);
 
-static thread_t *run_thread;
+static thread_t run_thread;
 
 // Bt event callbacks
 
@@ -286,8 +287,8 @@ void bt_stack_event_handler(void* event_handler_arg, esp_event_base_t event_base
 void bt_transport::init() { // TODO: write bt_transport::deinit
     event_bridge::set_listener(BT_TRANSPORT, bt_stack_event_handler);
 
-    run_thread = new thread_t(bt_stack_thread, nullptr, 15, 8192);
-    run_thread->launch();
+    thread_init(&run_thread, bt_stack_thread, "bt_transport_task", 15, 8192);
+    thread_launch(&run_thread);
 }
 
 void hci_cb(uint8_t packet_type, uint16_t channel, uint8_t *packet, uint16_t size) {

@@ -1,7 +1,7 @@
 #include "wifi_util.h"
 
 #include <cstring>
-#include <impl.h>
+#include <impl/log.h>
 #include "esp_wifi.h"
 #include "esp_log.h"
 #include "common_util.h"
@@ -77,7 +77,6 @@ static void wifi_stop() {
 }
 
 void wifi_util::init() {
-    esp_netif_init();
     ESP_ERROR_CHECK(esp_event_loop_create_default());
 }
 
@@ -106,7 +105,7 @@ esp_err_t wifi_util::connect() {
                     .scan_method = WIFI_ALL_CHANNEL_SCAN,
                     .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
                     .threshold = {
-                            .rssi = -127, // ?? research
+                            .rssi = -127,
                             .authmode = WIFI_AUTH_OPEN,
                     }
             },

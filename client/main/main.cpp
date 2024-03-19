@@ -20,7 +20,8 @@
 #include "wifi_util.h"
 #include "ctl_periph.h"
 
-#include <impl.h>
+#include <impl/log.h>
+#include <impl/concurrency.h>
 
 static const char *TAG = "MAIN";
 
@@ -90,6 +91,6 @@ extern "C" [[noreturn]] int app_main(void) {
     event_bridge::post(trts[cur_trt], event_bridge::SVC_START, APPLICATION);
 
     while (true) {
-        thread_t::sleep(500);
+        thread_sleep(500);
     }
 }
