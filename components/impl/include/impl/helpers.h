@@ -36,6 +36,9 @@ public:
     }
 };
 
-
+#define BAD_VAL_CHECK(x, b) if (x == b) { loge(TAG, #x " has bad value = " #b); }
+#define BAD_VAL_MSG(x, b, m) if (x == b) { loge(TAG, #x " has bad value = " #b ": " m); }
+#define BAD_VAL_MSG_IF(x, b, m) BAD_VAL_MSG(x, b, m) if(x == b)
+#define BAD_VAL_IF(x, b) BAD_VAL_CHECK(x, b) if(x == b)
 
 #endif //IMPL_HELPERS_H
