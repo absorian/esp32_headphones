@@ -13,7 +13,7 @@
 static const char *TAG = "NET_TRANSPORT";
 
 const char *HOST_ADDR = "10.242.1.61";
-const uint16_t PORT = 533;
+const uint16_t PORT = 48080;
 
 enum client_state_t {
     CL_UNINIT = 0,

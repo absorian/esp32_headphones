@@ -12,7 +12,7 @@
 #define NUM_CHANNELS_MIC 1
 #define SAMPLE_RATE 44100
 
-#define PORT 533
+#define PORT 48080
 
 const char *TAG_GLOB = "Server";
 
