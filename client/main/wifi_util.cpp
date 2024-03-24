@@ -2,9 +2,12 @@
 
 #include <cstring>
 #include <impl/log.h>
+#include <impl/helpers.h>
 #include "esp_wifi.h"
-#include "esp_log.h"
-#include "common_util.h"
+
+
+#define WIFI_SSID "myssid"
+#define WIFI_PASSWORD "mypassword"
 
 #define NETIF_TXT_DESC "HEADPHONES_NETIF_STA"
 #define CONN_MAX_RETRY 6
@@ -100,8 +103,8 @@ esp_err_t wifi_util::connect() {
     wifi_start();
     wifi_config_t wifi_config = {
             .sta = {
-                    .ssid = CONFIG_EXAMPLE_WIFI_SSID,
-                    .password = CONFIG_EXAMPLE_WIFI_PASSWORD,
+                    .ssid = WIFI_SSID,
+                    .password = WIFI_PASSWORD,
                     .scan_method = WIFI_ALL_CHANNEL_SCAN,
                     .sort_method = WIFI_CONNECT_AP_BY_SIGNAL,
                     .threshold = {
