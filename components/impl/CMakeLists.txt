@@ -6,7 +6,7 @@ if (ESP_PLATFORM EQUAL 1)
     idf_component_register(SRCS ${SOURCES_COMMON} concurrency_freertos.cpp
             PRIV_REQUIRES freertos esp_netif
             INCLUDE_DIRS "./include"
-            PRIV_INCLUDE_DIRS "./private"
+            # PRIV_INCLUDE_DIRS "./private"
             )
 else ()
     add_library(impl STATIC ${SOURCES_COMMON} concurrency_posix.cpp)
