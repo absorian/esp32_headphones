@@ -1,5 +1,4 @@
-#ifndef IMPL_LOG_H
-#define IMPL_LOG_H
+#pragma once
 
 #define LOG_COLOR_BLACK   "30"
 #define LOG_COLOR_RED     "31"
@@ -12,13 +11,32 @@
 #define LOG_BOLD(COLOR)   "\033[1;" COLOR "m"
 #define LOG_RESET_COLOR   "\033[0m"
 
-#include <ctime>
-#include <cstdio>
-extern time_t log_timestamp();
+#include <time.h>
+#include <stdio.h>
 
-#define logi(tag, fmt, ...) printf(LOG_COLOR(LOG_COLOR_GREEN) "I (%lld) %s: " fmt LOG_RESET_COLOR "\n", log_timestamp(), tag, ##__VA_ARGS__)
-#define logp(tag, fmt, ...) printf(LOG_BOLD(LOG_COLOR_BLUE) "P %s: " fmt LOG_RESET_COLOR "\n", tag, ##__VA_ARGS__)
-#define loge(tag, fmt, ...) printf(LOG_COLOR(LOG_COLOR_RED) "E (%lld) %s: " fmt LOG_RESET_COLOR "\n", log_timestamp(), tag, ##__VA_ARGS__)
-#define logr(fmt, ...) printf(fmt, ##__VA_ARGS__); fflush(stdout)
+time_t log_timestamp();
 
-#endif //IMPL_LOG_H
+#ifdef APP_DEBUG
+// Debug
+#define logd(fmt, ...) \
+    printf(LOG_COLOR(LOG_COLOR_PURPLE) "D (%lld) [%s] " fmt LOG_RESET_COLOR "\n", \
+    log_timestamp(), __func__, ##__VA_ARGS__)
+#else
+#define logd(fmt, ...)
+#endif
+
+// Info
+#define logi(fmt, ...) \
+    printf(LOG_COLOR(LOG_COLOR_GREEN) "I (%lld) [%s] " fmt LOG_RESET_COLOR "\n", \
+    log_timestamp(), __func__, ##__VA_ARGS__)
+// Warning
+#define logw(fmt, ...) \
+    printf(LOG_BOLD(LOG_COLOR_BLUE) "W (%lld) [%s] " fmt LOG_RESET_COLOR "\n", \
+    log_timestamp(), __func__, ##__VA_ARGS__)
+// Error
+#define loge(fmt, ...) \
+    printf(LOG_COLOR(LOG_COLOR_RED) "E (%lld) [%s] " fmt LOG_RESET_COLOR "\n", \
+    log_timestamp(), __func__, ##__VA_ARGS__)
+// Raw
+#define logr(fmt, ...) \
+    printf(fmt, ##__VA_ARGS__); fflush(stdout)

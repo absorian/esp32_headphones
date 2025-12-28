@@ -5,6 +5,8 @@
 #include <impl/concurrency.h>
 #include <impl/log.h>
 #include <cassert>
+#include <cstdlib>
+#include <cstring>
 
 namespace sender {
 
@@ -81,7 +83,7 @@ namespace sender {
 
             g_cur_flags |= FLG_REQ;
             bin_sem_give(&g_task_sem);
-            bin_sem_take(&g_req_sem);
+            bin_sem_wait(&g_req_sem);
 
             g_buf_ptr = 0;
         }
@@ -94,7 +96,7 @@ namespace sender {
         mutex_lock(&g_mutex);
         g_cur_flags |= FLG_REQ_MD;
         bin_sem_give(&g_task_sem);
-        bin_sem_take(&g_req_sem);
+        bin_sem_wait(&g_req_sem);
         mutex_unlock(&g_mutex);
     }
 
@@ -109,7 +111,7 @@ namespace sender {
         logi(TAG, "task_send is started");
 
         while (true) {
-            if (!(g_cur_flags & FLG_TASK)) bin_sem_take(&g_task_sem);
+            if (!(g_cur_flags & FLG_TASK)) bin_sem_wait(&g_task_sem);
 
             if (g_cur_flags & FLG_REQ) {
                 send_raw(g_buf, g_buf_ptr);

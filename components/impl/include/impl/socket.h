@@ -1,7 +1,4 @@
-#ifndef IMPL_SOCKET_H
-#define IMPL_SOCKET_H
-
-#include <cstdint>
+#pragma once
 
 #ifdef ESP_PLATFORM
 
@@ -18,6 +15,7 @@
 
 #else
 #include <sys/socket.h>
+#include <netinet/in.h>
 #endif
 
 typedef struct sockaddr_storage endpoint_t;
@@ -30,20 +28,17 @@ typedef int socket_t;
 
 void endpoint_clear(endpoint_t *enp);
 
-void endpoint_set_addr_v4(endpoint_t *enp, const char *addr);
+void endpoint_set_addr(endpoint_t *enp, const char *addr);
 
-void endpoint_set_addr_v6(endpoint_t *enp, const char *addr);
+void endpoint_get_addr(endpoint_t *enp, char *addr);
 
-void endpoint_set_port(endpoint_t *enp, uint16_t port, uint16_t family = AF_UNSPEC);
-
-void endpoint_get_addr_v4(endpoint_t *enp, char *addr);
-
-void endpoint_get_addr_v6(endpoint_t *enp, char *addr);
+void endpoint_set_port(endpoint_t *enp, uint16_t port);
 
 uint16_t endpoint_get_port(endpoint_t *enp);
+
+// void endpoint_set_addr_v6(endpoint_t *enp, const char *addr);
+// void endpoint_get_addr_v6(endpoint_t *enp, char *addr);
 
 void socket_init();
 
 int socket_errno();
-
-#endif //IMPL_SOCKET_H

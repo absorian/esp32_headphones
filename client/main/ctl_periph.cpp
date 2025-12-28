@@ -14,7 +14,7 @@ ESP_EVENT_DEFINE_BASE(CTL_PERIPH);
 static void btn_isr_handler(void *par) {
     static time_t debounce_time = 0;
 
-    time_t cur_time = thread_millis();
+    time_t cur_time = thread_micros();
     if (cur_time - debounce_time > BTN_LONG_PRESS_TIME) {
         // action for long press
     } else if (cur_time - debounce_time > BTN_PRESS_TIME) {

@@ -1,3 +1,5 @@
+#include <cerrno>
+#include <cstring>
 #include <receiver.h>
 #include <net_controller.h>
 #include <net_controller_private.h>
@@ -95,7 +97,7 @@ namespace receiver {
         ssize_t received;
         while (true) {
             if (!g_cur_state) {
-                bin_sem_take(&g_task_sem);
+                bin_sem_wait(&g_task_sem);
                 continue;
             }
 

@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.17)
+cmake_minimum_required(VERSION 3.28)
 
 set(COMPONENTS_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}/../components)
 
@@ -15,18 +15,20 @@ ENDMACRO()
 
 project(server)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 11)
 
-add_subdirectory($ENV{PORTAUDIO} ${CMAKE_CURRENT_BINARY_DIR}/portaudio)
+find_package(portaudio CONFIG REQUIRED)
 
 subdir_list(comps ${COMPONENTS_DIRECTORY})
 foreach (c ${comps})
     add_subdirectory(${COMPONENTS_DIRECTORY}/${c} ${CMAKE_CURRENT_BINARY_DIR}/components/${c})
 endforeach ()
 
+include_directories(${portaudio_INCLUDE_DIRS})
+
 add_executable(${CMAKE_PROJECT_NAME} main.cpp)
 
-target_link_libraries(${CMAKE_PROJECT_NAME} PortAudio)
+target_link_libraries(${CMAKE_PROJECT_NAME} portaudio_static)
 
 foreach (c ${comps})
     target_link_libraries(${CMAKE_PROJECT_NAME} ${c})

@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.9)
 
-set(SOURCES_COMMON net_controller.cpp receiver.cpp sender.cpp)
+set(CMAKE_C_STANDARD 11)
+
+set(SOURCES_COMMON net_controller.cpp receiver.cpp sender.cpp
+        net_controller.c stopaw.c)
 
 if (ESP_PLATFORM EQUAL 1)
     idf_component_register(SRCS ${SOURCES_COMMON}
